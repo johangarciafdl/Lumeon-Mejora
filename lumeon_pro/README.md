@@ -64,12 +64,14 @@ http://127.0.0.1:5000
 ### 📧 Recibos Automáticos (NUEVO)
 
 **Cuando registras una venta:**
+
 1. ✅ Se guarda en la BD
 2. ✅ Se crea auto-pedido
 3. ✅ Se genera PDF profesional
 4. ✅ Se envía email automático al cliente
 
 **Recibo incluye:**
+
 - 🎨 Diseño profesional con branding LUMEON
 - 👋 Saludo personalizado ("¡Hola María!")
 - 📋 Número de factura, fecha, estado

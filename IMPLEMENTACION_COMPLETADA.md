@@ -172,13 +172,13 @@ GMAIL_USER=mitienda@gmail.com
 GMAIL_PASSWORD=xyzw9876lmno1234
 ```
 
-2. Reinicia servidor:
+1. Reinicia servidor:
 
 ```bash
 python lumeon_pro\backend\app.py
 ```
 
-3. ¡Listo! Emails se enviarán automáticamente
+1. ¡Listo! Emails se enviarán automáticamente
 
 Ver guía detallada: `CONFIGURAR_GMAIL.md`
 
@@ -403,13 +403,10 @@ R: No, se genera cada vez en memoria
 **¡Tu sistema de recibos automáticos está LISTO para producción!**
 
 Ahora cada venta:
+
 1. 📄 Genera PDF profesional automáticamente
 2. 📧 Envía email personalizado al cliente
 3. 🔔 Registra status de envío en BD
 4. 📊 Mantiene log detallado
 
 **Sin intervención manual. Completamente automático.**
-
----
-
-**LUMEON PRO v2.2 - Sistema de Gestión Profesional 2026 ✅**

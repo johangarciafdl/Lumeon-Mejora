@@ -334,7 +334,9 @@ input[type=number]::-webkit-inner-spin-button{opacity:.5}
         <div class="form-group"><label>Forma de Pago</label>
           <select id="vf-pago"><option>Contado</option><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Crédito</option></select></div>
         <div class="form-group"><label>Cliente</label>
-          <select id="vf-cliente"><option value="">-- Seleccionar --</option></select></div>
+          <select id="vf-cliente" onchange="onVentaClienteChange()"><option value="">-- Seleccionar --</option></select></div>
+        <div class="form-group"><label>Email del Cliente</label><input id="vf-email" type="email" placeholder="ejemplo@correo.com"></div>
+        <div class="form-group"><label>Teléfono del Cliente</label><input id="vf-tel" placeholder="3123456789"></div>
         <div class="form-group"><label>Estado</label>
           <select id="vf-estado"><option>Pendiente</option><option>Pagado</option><option>Cancelado</option></select></div>
         <div class="form-group"><label>Notas</label><input id="vf-notas" placeholder="Observaciones..."></div>
@@ -723,6 +725,8 @@ async function openModalVenta(){
   document.getElementById('vf-num').value = `FAC-${String(Date.now()).slice(-4)}`;
   document.getElementById('vf-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('vf-notas').value = '';
+  document.getElementById('vf-email').value = '';
+  document.getElementById('vf-tel').value = '';
   // Load clientes
   const cls = await fetch(`${API}/clientes`).then(r=>r.json());
   document.getElementById('vf-cliente').innerHTML = '<option value="">-- Sin cliente --</option>' + cls.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('');
@@ -745,6 +749,19 @@ async function addVentaItem(){
   renderVentaItems();
 }
 
+async function onVentaClienteChange(){
+  const clienteId = document.getElementById('vf-cliente').value;
+  if(!clienteId){
+    document.getElementById('vf-email').value = '';
+    document.getElementById('vf-tel').value = '';
+    return;
+  }
+  const clientes = await fetch(`${API}/clientes`).then(r=>r.json());
+  const cliente = clientes.find(x => x.id == clienteId);
+  document.getElementById('vf-email').value = cliente?.email || '';
+  document.getElementById('vf-tel').value = cliente?.telefono || '';
+}
+
 function renderVentaItems(){
   let sub=0,gan=0;
   document.getElementById('vf-items-body').innerHTML = ventaItems.map((it,i)=>{
@@ -762,20 +779,15 @@ async function saveVenta(){
   if(!ventaItems.length){ toast('Agrega al menos un producto','error'); return; }
   const cl = document.getElementById('vf-cliente');
   const cliente_id = cl.value||null;
-  const cliente_nombre = cl.options[cl.selectedIndex].text;
-  
-  // Obtener datos del cliente si está seleccionado
-  let cliente_email = '', cliente_telefono = '';
-  if(cliente_id){
-    const clientes = await fetch(`${API}/clientes`).then(r=>r.json());
-    const c = clientes.find(x=>x.id==cliente_id);
-    if(c){ cliente_email = c.email||''; cliente_telefono = c.telefono||''; }
-  }
+  let cliente_nombre = cl.options[cl.selectedIndex].text;
+  if(cliente_nombre === '-- Seleccionar --' || cliente_nombre === '-- Sin cliente --') cliente_nombre = '';
+  const cliente_email = document.getElementById('vf-email').value.trim();
+  const cliente_telefono = document.getElementById('vf-tel').value.trim();
   
   const body = {
     numero_factura: document.getElementById('vf-num').value.trim(),
     cliente_id: cliente_id,
-    cliente_nombre: cliente_nombre==='-- Seleccionar --'?'':cliente_nombre,
+    cliente_nombre: cliente_nombre,
     cliente_email: cliente_email,
     cliente_telefono: cliente_telefono,
     fecha: document.getElementById('vf-fecha').value,
@@ -789,7 +801,10 @@ async function saveVenta(){
   try{
     const r = await fetch(`${API}/ventas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
     if(r.ok){ 
-      toast('✅ Venta registrada | 📦 Pedido generado | 📧 Email enviado'); 
+      const successMsg = r.email_enviado ?
+        '✅ Venta registrada | 📦 Pedido generado | 📧 Email enviado' :
+        '✅ Venta registrada | 📦 Pedido generado | ⚠️ Email no enviado';
+      toast(r.mensaje || successMsg, r.email_enviado ? 'success' : 'warning');
       closeModal('modal-venta'); 
       loadVentas(); 
       loadDashboard(); 

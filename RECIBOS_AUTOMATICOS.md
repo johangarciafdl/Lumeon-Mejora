@@ -51,14 +51,14 @@ GMAIL_USER=tu_email@gmail.com
 GMAIL_PASSWORD=tu_contrasena_de_15_caracteres
 ```
 
-2. **Genera una contraseña de aplicación en Google:**
+1. **Genera una contraseña de aplicación en Google:**
 
    - Ve a [https://myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
    - Selecciona "Mail" y "Windows Computer"
    - Google generará una contraseña de 16 caracteres
    - Cópiala en el `.env` (sin espacios)
 
-3. **Ejemplo correcto:**
+2. **Ejemplo correcto:**
 
 ```env
 GMAIL_USER=mitienda@gmail.com
@@ -71,7 +71,7 @@ Si no configuras Gmail, el sistema:
 
 - ✅ Registra la venta normalmente
 - ✅ Genera el PDF del recibo
-- ✅ Muestra en consola: "⚠️ Email no configurado. Recibo sería enviado a: cliente@ejemplo.com"
+- ✅ Muestra en consola: "⚠️ Email no configurado. Recibo sería enviado a: <cliente@ejemplo.com>"
 - ❌ No envía el email automáticamente
 
 ---
@@ -132,6 +132,7 @@ Verás mensajes como:
 ### En la Base de Datos
 
 Cada venta tiene un campo `pdf_enviado`:
+
 - `1` = Email enviado ✅
 - `0` = Email no enviado (no configurado o error)
 
@@ -185,7 +186,7 @@ elements.insert(0, logo)
 2. **Login:** admin1 / admin123
 3. **Registra una venta:**
    - Cliente: "Test Cliente"
-   - Email: tu_email@gmail.com
+   - Email: <tu_email@gmail.com>
    - Producto: cualquiera
    - Haz clic: "💾 REGISTRAR VENTA"
 
@@ -211,6 +212,7 @@ elements.insert(0, logo)
 ### Email no llega
 
 **Verificar:**
+
 1. ¿Gmail está configurado? (`echo $GMAIL_USER` en terminal)
 2. ¿Cliente ingresó email? (formulario de venta)
 3. ¿Revisar spam/promociones en Gmail?

@@ -46,17 +46,17 @@ GMAIL_PASSWORD=
 Selecciona la aplicación y el dispositivo
 ```
 
-3. En **"Selecciona la aplicación"**: Elige **"Correo"**
-4. En **"Selecciona el dispositivo"**: Elige **"Windows Computer"** (o tu SO)
-5. Haz clic en **"Generar"**
+1. En **"Selecciona la aplicación"**: Elige **"Correo"**
+2. En **"Selecciona el dispositivo"**: Elige **"Windows Computer"** (o tu SO)
+3. Haz clic en **"Generar"**
 
-6. **Google te mostrará una contraseña de 16 caracteres** como:
+4. **Google te mostrará una contraseña de 16 caracteres** como:
 
 ```text
 abcd 1234 efgh 5678
 ```
 
-7. **Cópiala** (sin espacios será: `abcd1234efgh5678`)
+1. **Cópiala** (sin espacios será: `abcd1234efgh5678`)
 
 ---
 
@@ -131,7 +131,7 @@ Deberías ver:
 ✅ Recibo enviado exitosamente a: tu_email@gmail.com
 ```
 
-5. Revisa tu **email** (o carpeta de **Spam**)
+1. Revisa tu **email** (o carpeta de **Spam**)
 
 ---
 

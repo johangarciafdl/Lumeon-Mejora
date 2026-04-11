@@ -6,7 +6,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from datetime import datetime
-import sqlite3, os, smtplib, io, re
+import sqlite3, os, smtplib, io, re, threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -863,10 +863,26 @@ def create_venta():
                 print(f"📧 Generando recibo para: {email_cliente}")
                 pdf_buffer = generar_factura_pdf(vid)
                 if pdf_buffer:
-                    email_enviado = enviar_factura_email(email_cliente, nombre_cliente, numero_factura, pdf_buffer)
-                    if email_enviado:
-                        c.execute("UPDATE ventas SET pdf_enviado=1 WHERE id=?", (vid,))
-                        conn.commit()
+                    # Enviar email en hilo separado para no bloquear la respuesta
+                    def enviar_en_hilo(email, nombre, factura, pdf, venta_id):
+                        try:
+                            resultado = enviar_factura_email(email, nombre, factura, pdf)
+                            if resultado:
+                                conn2 = get_db()
+                                conn2.execute("UPDATE ventas SET pdf_enviado=1 WHERE id=?", (venta_id,))
+                                conn2.commit()
+                                conn2.close()
+                                print(f"✅ Email enviado en hilo: {email}")
+                        except Exception as e:
+                            print(f"❌ Error en hilo email: {e}")
+                    
+                    hilo = threading.Thread(
+                        target=enviar_en_hilo,
+                        args=(email_cliente, nombre_cliente, numero_factura, pdf_buffer, vid),
+                        daemon=True
+                    )
+                    hilo.start()
+                    email_enviado = True  # Optimista - se envía en background
                 else:
                     print("❌ No se pudo generar el PDF del recibo")
             else:

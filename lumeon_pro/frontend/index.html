@@ -722,7 +722,7 @@ async function cambiarEstado(id, estado){
 async function openModalVenta(){
   ventaItems = [];
   renderVentaItems();
-  // Generar número de factura automático consultando el último del backend
+  // Generar número de factura automático único
   try {
     const ventas = await fetch(`${API}/ventas`).then(r=>r.json());
     let maxNum = 0;
@@ -730,9 +730,10 @@ async function openModalVenta(){
       const match = v.numero_factura.match(/FAC-(\d+)/);
       if(match) maxNum = Math.max(maxNum, parseInt(match[1]));
     });
-    document.getElementById('vf-num').value = `FAC-${String(maxNum + 1).padStart(4,'0')}`;
+    const siguiente = maxNum + 1;
+    document.getElementById('vf-num').value = `FAC-${String(siguiente).padStart(4,'0')}-${Date.now().toString().slice(-4)}`;
   } catch(e) {
-    document.getElementById('vf-num').value = `FAC-${String(Date.now()).slice(-6)}`;
+    document.getElementById('vf-num').value = `FAC-${Date.now()}`;
   }
   document.getElementById('vf-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('vf-notas').value = '';

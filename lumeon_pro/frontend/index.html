@@ -472,7 +472,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:.5}
 </div>
 
 <script>
-const API = 'http://127.0.0.1:5000/api';
+const API = window.location.origin + '/api';
 let currentPage = 'dashboard';
 let ventaItems = [], pedidoItems = [];
 let editProductoId = null, editClienteId = null;

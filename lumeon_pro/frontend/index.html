@@ -722,11 +722,24 @@ async function cambiarEstado(id, estado){
 async function openModalVenta(){
   ventaItems = [];
   renderVentaItems();
-  document.getElementById('vf-num').value = `FAC-${String(Date.now()).slice(-4)}`;
+  // Generar número de factura automático consultando el último del backend
+  try {
+    const ventas = await fetch(`${API}/ventas`).then(r=>r.json());
+    let maxNum = 0;
+    ventas.forEach(v => {
+      const match = v.numero_factura.match(/FAC-(\d+)/);
+      if(match) maxNum = Math.max(maxNum, parseInt(match[1]));
+    });
+    document.getElementById('vf-num').value = `FAC-${String(maxNum + 1).padStart(4,'0')}`;
+  } catch(e) {
+    document.getElementById('vf-num').value = `FAC-${String(Date.now()).slice(-6)}`;
+  }
   document.getElementById('vf-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('vf-notas').value = '';
   document.getElementById('vf-email').value = '';
   document.getElementById('vf-tel').value = '';
+  document.getElementById('vf-pago').value = 'Contado';
+  document.getElementById('vf-estado').value = 'Pendiente';
   // Load clientes
   const cls = await fetch(`${API}/clientes`).then(r=>r.json());
   document.getElementById('vf-cliente').innerHTML = '<option value="">-- Sin cliente --</option>' + cls.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('');
@@ -871,11 +884,24 @@ async function updatePedidoEstado(id, estado){
   toast(`Pedido: ${estado}`); loadPedidos();
 }
 
-function openModalPedido(){
+async function openModalPedido(){
   pedidoItems=[];
   renderPedidoItems();
-  document.getElementById('pp-num').value=`PED-${String(Date.now()).slice(-4)}`;
+  // Generar número de pedido automático
+  try {
+    const pedidos = await fetch(`${API}/pedidos`).then(r=>r.json());
+    let maxNum = 0;
+    pedidos.forEach(p => {
+      const match = p.numero_pedido.match(/PED-(\d+)/);
+      if(match) maxNum = Math.max(maxNum, parseInt(match[1]));
+    });
+    document.getElementById('pp-num').value = `PED-${String(maxNum + 1).padStart(4,'0')}`;
+  } catch(e) {
+    document.getElementById('pp-num').value = `PED-${String(Date.now()).slice(-6)}`;
+  }
   document.getElementById('pp-fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('pp-ciclo').value='';
+  document.getElementById('pp-notas').value='';
   openModal('modal-pedido');
 }
 

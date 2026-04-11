@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: lumeon-pro
+    runtime: python
+    buildCommand: pip install -r lumeon_pro/requirements.txt
+    startCommand: gunicorn --chdir lumeon_pro/backend app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_PASSWORD
+        sync: false
+      - key: GMAIL_FROM_NAME
+        value: LUMEON

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recibo LUMEON - Ejemplo Visual</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f5f5f5; 
+            padding: 20px;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background-color: white; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            border-radius: 8px; 
+            overflow: hidden; 
+        }
+        .header { 
+            background: linear-gradient(135deg, #7C3AED 0%, #a78bfa 100%); 
+            color: white; 
+            padding: 30px 20px; 
+            text-align: center; 
+        }
+        .header h1 { 
+            font-size: 28px; 
+            margin-bottom: 5px; 
+            font-weight: 600; 
+        }
+        .header p { 
+            font-size: 14px; 
+            opacity: 0.95; 
+            letter-spacing: 0.5px; 
+        }
+        .content { 
+            padding: 30px 20px; 
+        }
+        .greeting { 
+            background-color: #f8f8f8; 
+            padding: 20px; 
+            border-radius: 6px; 
+            margin-bottom: 25px; 
+            border-left: 4px solid #7C3AED; 
+        }
+        .greeting h2 { 
+            color: #333; 
+            font-size: 18px; 
+            margin-bottom: 10px; 
+        }
+        .greeting p { 
+            color: #666; 
+            font-size: 14px; 
+            line-height: 1.6; 
+        }
+        .section { 
+            margin-bottom: 25px; 
+        }
+        .section h3 { 
+            color: #7C3AED; 
+            font-size: 14px; 
+            font-weight: 600; 
+            margin-bottom: 12px; 
+            text-transform: uppercase; 
+            letter-spacing: 1px; 
+        }
+        .invoice-detail { 
+            background-color: #f8f8f8; 
+            padding: 15px; 
+            border-radius: 6px; 
+            margin-bottom: 10px; 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 15px; 
+        }
+        .detail-item { }
+        .detail-label { 
+            font-size: 12px; 
+            color: #999; 
+            text-transform: uppercase; 
+            font-weight: 600; 
+            letter-spacing: 0.5px; 
+        }
+        .detail-value { 
+            font-size: 16px; 
+            color: #333; 
+            font-weight: 600; 
+            margin-top: 3px; 
+        }
+        .products-section { 
+            margin: 25px 0; 
+        }
+        .product-row { 
+            display: grid; 
+            grid-template-columns: 1fr 3fr 1fr 1fr; 
+            gap: 10px; 
+            padding: 10px 0; 
+            border-bottom: 1px solid #e0e0e0; 
+            font-size: 13px; 
+        }
+        .product-row:first-child { 
+            font-weight: 600; 
+            color: #7C3AED; 
+            border-bottom: 2px solid #7C3AED; 
+            padding-bottom: 8px; 
+        }
+        .product-qty, .product-price { 
+            color: #333; 
+            text-align: right; 
+        }
+        .summary { 
+            background-color: #f8f8f8; 
+            padding: 20px; 
+            border-radius: 6px; 
+            margin: 20px 0; 
+        }
+        .summary-row { 
+            display: grid; 
+            grid-template-columns: 1fr auto; 
+            gap: 20px; 
+            padding: 8px 0; 
+            font-size: 14px; 
+        }
+        .summary-row.total { 
+            border-top: 2px solid #7C3AED; 
+            padding-top: 12px; 
+            font-weight: 600; 
+            color: #7C3AED; 
+            font-size: 16px; 
+        }
+        .thanks { 
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(167, 139, 250, 0.1) 100%); 
+            padding: 25px; 
+            border-radius: 6px; 
+            text-align: center; 
+            margin: 25px 0; 
+            border-left: 4px solid #7C3AED; 
+        }
+        .thanks h2 { 
+            color: #7C3AED; 
+            font-size: 18px; 
+            margin-bottom: 8px; 
+        }
+        .thanks p { 
+            color: #666; 
+            font-size: 13px; 
+            line-height: 1.7; 
+        }
+        .footer { 
+            background-color: #f0f0f0; 
+            padding: 20px; 
+            text-align: center; 
+            font-size: 12px; 
+            color: #999; 
+            border-top: 1px solid #e0e0e0; 
+        }
+        .footer p { 
+            margin: 3px 0; 
+        }
+        .highlight { 
+            color: #7C3AED; 
+            font-weight: 600; 
+        }
+        .info-box {
+            background-color: #E8F3FF;
+            border-left: 4px solid #0066CC;
+            padding: 12px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div style="max-width: 700px; margin: 0 auto;">
+        <div class="info-box">
+            📌 <strong>Ejemplo Visual:</strong> Esto es cómo se ve tu recibo en el email del cliente. El PDF adjunto tiene el mismo diseño.
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <h1>✨ LUMEON</h1>
+            <p>Cuidamos tu luz natural</p>
+        </div>
+        
+        <!-- CONTENT -->
+        <div class="content">
+            <!-- SALUDO -->
+            <div class="greeting">
+                <h2>¡Hola María!</h2>
+                <p>Tu compra ha sido procesada exitosamente. Aquí está el detalle de tu recibo.</p>
+            </div>
+            
+            <!-- INFORMACIÓN DEL RECIBO -->
+            <div class="section">
+                <h3>Información del Recibo</h3>
+                <div class="invoice-detail">
+                    <div class="detail-item">
+                        <div class="detail-label">Número de Factura</div>
+                        <div class="detail-value"><span class="highlight">#FAC-0001</span></div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Estado</div>
+                        <div class="detail-value">✓ Completado</div>
+                    </div>
+                </div>
+                <div class="invoice-detail">
+                    <div class="detail-item">
+                        <div class="detail-label">Fecha</div>
+                        <div class="detail-value">09/04/2026</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Forma de Pago</div>
+                        <div class="detail-value">Contado</div>
+                    </div>
+                </div>
+                <div class="invoice-detail">
+                    <div class="detail-item">
+                        <div class="detail-label">Email</div>
+                        <div class="detail-value">maria@ejemplo.com</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Teléfono</div>
+                        <div class="detail-value">+57 301 234 5678</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- DETALLE DE PRODUCTOS -->
+            <div class="section products-section">
+                <h3>Detalle de tu Compra</h3>
+                <div class="product-row">
+                    <div>REF</div>
+                    <div>Producto</div>
+                    <div>Cant</div>
+                    <div>Precio Unit</div>
+                </div>
+                <div class="product-row">
+                    <div>70983</div>
+                    <div>PULPA HIDRATANTE MANOS 75G</div>
+                    <div class="product-qty">2</div>
+                    <div class="product-price">$44,460</div>
+                </div>
+                <div class="product-row">
+                    <div>218169</div>
+                    <div>BOLSA MEDIANA</div>
+                    <div class="product-qty">4</div>
+                    <div class="product-price">$1,800</div>
+                </div>
+                <div class="product-row">
+                    <div>174338</div>
+                    <div>ACEITE TRIFÁSICO CORPORAL 200ML</div>
+                    <div class="product-qty">1</div>
+                    <div class="product-price">$66,150</div>
+                </div>
+            </div>
+            
+            <!-- RESUMEN -->
+            <div class="section">
+                <h3>Resumen</h3>
+                <div class="summary">
+                    <div class="summary-row">
+                        <div>Subtotal:</div>
+                        <div>$200,420</div>
+                    </div>
+                    <div class="summary-row">
+                        <div>Ganancia Estimada:</div>
+                        <div>$120,000</div>
+                    </div>
+                    <div class="summary-row total">
+                        <div>TOTAL:</div>
+                        <div>$200,420</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- MENSAJE DE GRACIAS -->
+            <div class="thanks">
+                <h2>¡Gracias por tu confianza!</h2>
+                <p>En LUMEON nos complace contar con clientes como tú. Tu satisfacción es nuestro mayor enfoque. Si tienes alguna pregunta o necesitas soporte, estamos aquí para ayudarte.</p>
+            </div>
+            
+            <!-- PIE DE PÁGINA -->
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                <p style="color: #999; font-size: 12px; margin-bottom: 10px;">Adjunto encontrarás tu recibo completo en PDF</p>
+                <p style="color: #7C3AED; font-weight: 600; font-size: 13px;">LUMEON PRO</p>
+                <p style="color: #999; font-size: 11px;">Sistema de Gestión - Natura & Avon</p>
+            </div>
+        </div>
+        
+        <!-- FOOTER -->
+        <div class="footer">
+            <p><strong>LUMEON PRO</strong> | Distribuidora Autorizada</p>
+            <p>Cuidamos tu luz natural • admin@lumeon.com</p>
+            <p style="margin-top: 10px; border-top: 1px solid #d0d0d0; padding-top: 10px;">Este es un correo automático, por favor no responder directamente.</p>
+        </div>
+    </div>
+
+    <div style="max-width: 700px; margin: 40px auto; padding: 20px; background-color: #E8F8F5; border-radius: 8px; border-left: 4px solid #10B981;">
+        <h3 style="color: #10B981; margin-bottom: 10px;">✅ ¿Cómo se envía?</h3>
+        <ol style="color: #333; font-size: 14px; line-height: 1.8;">
+            <li><strong>Automáticamente</strong> cuando registras una venta en LUMEON PRO</li>
+            <li>Se envía al email del cliente que ingresaste en el formulario</li>
+            <li>Incluye este diseño HTML + PDF adjunto</li>
+            <li>El cliente puede guardarlo, compartirlo o imprimirlo</li>
+        </ol>
+    </div>
+
+    <div style="max-width: 700px; margin: 20px auto; padding: 20px; background-color: #FFF8E8; border-radius: 8px; border-left: 4px solid #FFB800;">
+        <h3 style="color: #FF8C00; margin-bottom: 10px;">🔧 Próximas Personalizaciones</h3>
+        <ul style="color: #333; font-size: 14px; line-height: 1.8;">
+            <li>✏️ Cambiar colores (púrpura, rosa, azul, etc)</li>
+            <li>✏️ Agregar tu logo en el PDF</li>
+            <li>✏️ Incluir tu teléfono y redes sociales</li>
+            <li>✏️ Códigos QR para reorden</li>
+            <li>✏️ Cupones o descuentos en la siguiente compra</li>
+        </ul>
+    </div>
+</body>
+</html>

@@ -1061,8 +1061,8 @@ def reenviar_recibo(vid):
         return jsonify({"ok": False, "error": "No se pudo enviar el recibo. Revisa la configuración de Gmail en .env"}), 500
  
  
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     print("🚀 LUMEON PRO corriendo en http://127.0.0.1:5000")
-    print("📧 Gmail configurado:", "✅ Sí" if os.getenv("GMAIL_USER") and os.getenv("GMAIL_USER") != "tu_email@gmail.com" else "❌ No (configura .env)")
     app.run(debug=True, port=5000)

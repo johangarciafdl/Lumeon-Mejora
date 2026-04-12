@@ -354,7 +354,10 @@ def enviar_factura_email(email_cliente, nombre_cliente, numero_factura, pdf_buff
         msg.attach(attachment)
  
         # ✅ Enviar con SMTP_SSL (puerto 465)
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(gmail_user, gmail_pass)
             server.send_message(msg)
  

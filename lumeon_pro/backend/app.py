@@ -7,6 +7,12 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from datetime import datetime
 import sqlite3, os, smtplib, io, re, threading
+try:
+    import psycopg2
+    import psycopg2.extras
+    USE_POSTGRES = True
+except ImportError:
+    USE_POSTGRES = False
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -32,6 +38,7 @@ def handle_options(p):
     return "", 200
  
 DB = os.path.join(os.path.dirname(__file__), "database.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
  
 # ═════════════════════════════════════════════════════════════════════════
 # USER MODEL & AUTH
@@ -54,14 +61,146 @@ def load_user(user_id):
     return None
  
 def get_db():
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
-    return conn
+    database_url = os.getenv("DATABASE_URL", "")
+    if database_url and database_url.startswith("postgresql"):
+        import psycopg2
+        import psycopg2.extras
+        conn = psycopg2.connect(database_url)
+        conn.autocommit = False
+        return conn
+    else:
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def is_postgres():
+    url = os.getenv("DATABASE_URL", "")
+    return url and url.startswith("postgresql")
+
+def row_to_dict(row, cursor=None):
+    if row is None:
+        return None
+    if hasattr(row, 'keys'):
+        return dict(row)
+    if cursor:
+        cols = [d[0] for d in cursor.description]
+        return dict(zip(cols, row))
+    return row
  
 def init_db():
     conn = get_db()
     c = conn.cursor()
  
+    database_url = os.getenv("DATABASE_URL", "")
+    if database_url and database_url.startswith("postgresql"):
+        _init_postgres(conn, c)
+    else:
+        _init_sqlite(conn, c)
+
+def _init_postgres(conn, c):
+    statements = ["""
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        email TEXT NOT NULL,
+        nombre TEXT,
+        rol TEXT DEFAULT 'admin',
+        activo INTEGER DEFAULT 1,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    )""","""
+    CREATE TABLE IF NOT EXISTS productos (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        referencia TEXT UNIQUE NOT NULL,
+        descripcion TEXT,
+        categoria TEXT DEFAULT 'General',
+        precio_compra REAL DEFAULT 0,
+        precio_venta REAL DEFAULT 0,
+        stock INTEGER DEFAULT 0,
+        stock_minimo INTEGER DEFAULT 5,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    )""","""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        documento TEXT,
+        telefono TEXT,
+        direccion TEXT,
+        email TEXT,
+        ciudad TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    )""","""
+    CREATE TABLE IF NOT EXISTS ventas (
+        id SERIAL PRIMARY KEY,
+        numero_factura TEXT UNIQUE NOT NULL,
+        cliente_id INTEGER,
+        cliente_nombre TEXT,
+        cliente_email TEXT,
+        cliente_telefono TEXT,
+        fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+        forma_pago TEXT DEFAULT 'Contado',
+        subtotal REAL DEFAULT 0,
+        total REAL DEFAULT 0,
+        ganancia REAL DEFAULT 0,
+        estado TEXT DEFAULT 'Pendiente',
+        notas TEXT,
+        pdf_enviado INTEGER DEFAULT 0,
+        usuario_id INTEGER
+    )""","""
+    CREATE TABLE IF NOT EXISTS venta_items (
+        id SERIAL PRIMARY KEY,
+        venta_id INTEGER NOT NULL,
+        producto_id INTEGER,
+        referencia TEXT,
+        nombre TEXT,
+        cantidad INTEGER DEFAULT 1,
+        precio_compra REAL DEFAULT 0,
+        precio_venta REAL DEFAULT 0,
+        subtotal REAL DEFAULT 0,
+        ganancia REAL DEFAULT 0
+    )""","""
+    CREATE TABLE IF NOT EXISTS pedidos (
+        id SERIAL PRIMARY KEY,
+        numero_pedido TEXT UNIQUE NOT NULL,
+        proveedor TEXT DEFAULT 'Natura',
+        venta_id INTEGER,
+        fecha_pedido TEXT,
+        fecha_entrega TEXT,
+        fecha_cancelacion TEXT,
+        total REAL DEFAULT 0,
+        estado TEXT DEFAULT 'Pendiente',
+        notas TEXT,
+        ciclo TEXT,
+        creado_en TEXT DEFAULT CURRENT_TIMESTAMP
+    )""","""
+    CREATE TABLE IF NOT EXISTS pedido_items (
+        id SERIAL PRIMARY KEY,
+        pedido_id INTEGER NOT NULL,
+        referencia TEXT,
+        nombre TEXT,
+        cantidad INTEGER DEFAULT 1,
+        precio_compra REAL DEFAULT 0,
+        subtotal REAL DEFAULT 0
+    )""","""
+    CREATE TABLE IF NOT EXISTS devoluciones (
+        id SERIAL PRIMARY KEY,
+        venta_id INTEGER,
+        numero_factura TEXT,
+        cliente_nombre TEXT,
+        referencia TEXT,
+        nombre TEXT,
+        cantidad INTEGER DEFAULT 1,
+        motivo TEXT,
+        fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+        estado TEXT DEFAULT 'Procesada'
+    )"""]
+    for stmt in statements:
+        c.execute(stmt)
+    conn.commit()
+    print("✅ Tablas PostgreSQL creadas/verificadas")
+
+def _init_sqlite(conn, c):
     c.executescript("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

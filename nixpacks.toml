@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = ["pip install -r lumeon_pro/requirements.txt"]
+
+[start]
+cmd = "gunicorn --chdir lumeon_pro/backend app:app --bind 0.0.0.0:$PORT"

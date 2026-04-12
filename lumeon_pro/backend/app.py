@@ -8,8 +8,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from datetime import datetime
 import sqlite3, os, smtplib, io, re, threading
 try:
-    import psycopg2
-    import psycopg2.extras
+    import pg8000
     USE_POSTGRES = True
 except ImportError:
     USE_POSTGRES = False
@@ -63,10 +62,17 @@ def load_user(user_id):
 def get_db():
     database_url = os.getenv("DATABASE_URL", "")
     if database_url and database_url.startswith("postgresql"):
-        import psycopg2
-        import psycopg2.extras
-        conn = psycopg2.connect(database_url)
-        conn.autocommit = False
+        import pg8000.native
+        import urllib.parse as urlparse
+        result = urlparse.urlparse(database_url)
+        conn = pg8000.dbapi.connect(
+            host=result.hostname,
+            port=result.port or 5432,
+            database=result.path[1:],
+            user=result.username,
+            password=result.password,
+            ssl_context=True
+        )
         return conn
     else:
         conn = sqlite3.connect(DB)

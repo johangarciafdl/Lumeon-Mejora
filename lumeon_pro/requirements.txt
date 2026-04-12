@@ -5,4 +5,4 @@ werkzeug
 reportlab
 python-dotenv
 gunicorn
-psycopg2-binary
+pg8000

@@ -241,141 +241,94 @@ def email_valido(email):
  
  
 def enviar_factura_email(email_cliente, nombre_cliente, numero_factura, pdf_buffer):
-    """Envía el recibo profesional por email al cliente"""
+    """Envía el recibo por email usando Resend API"""
     try:
-        gmail_user = os.getenv("GMAIL_USER", "").strip()
-        gmail_pass = os.getenv("GMAIL_PASSWORD", "").strip()
- 
-        # Verificar configuración
-        if not gmail_user or not gmail_pass or gmail_user == "tu_email@gmail.com":
-            print(f"⚠️  Email no configurado. Configura GMAIL_USER y GMAIL_PASSWORD en el archivo .env")
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        from_name = os.getenv("GMAIL_FROM_NAME", "LUMEON")
+
+        if not resend_key:
+            print("⚠️  RESEND_API_KEY no configurada")
             return False
- 
-        # ✅ FIX: Validar email usando función separada (no dentro de f-string)
+
         if not email_valido(email_cliente):
-            print(f"❌ Email del cliente inválido: '{email_cliente}'")
+            print(f"❌ Email inválido: {email_cliente}")
             return False
- 
+
         print(f"📧 Enviando recibo a: {email_cliente}")
- 
-        msg = MIMEMultipart('mixed')
-        msg['From'] = f"{os.getenv('GMAIL_FROM_NAME', 'LUMEON')} <{gmail_user}>"
-        msg['To'] = email_cliente
-        msg['Subject'] = f"Tu Recibo LUMEON #{numero_factura} ✓"
- 
-        # ✅ HTML del email mejorado — sin variables de formato que interfieran
+
         nombre_display = nombre_cliente.title() if nombre_cliente else "Cliente"
-        body_html = (
-            "<!DOCTYPE html>"
-            "<html><head>"
-            "<meta charset='UTF-8'>"
-            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+
+        html_body = (
+            "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
             "<style>"
-            "* { margin: 0; padding: 0; box-sizing: border-box; }"
-            "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; }"
-            ".container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }"
-            ".header { background: linear-gradient(135deg, #7C3AED 0%, #a78bfa 100%); color: white; padding: 30px 20px; text-align: center; }"
-            ".header h1 { font-size: 28px; margin-bottom: 5px; font-weight: 600; }"
-            ".header p { font-size: 14px; opacity: 0.95; letter-spacing: 0.5px; }"
-            ".content { padding: 30px 20px; }"
-            ".greeting { background-color: #f8f8f8; padding: 20px; border-radius: 6px; margin-bottom: 25px; border-left: 4px solid #7C3AED; }"
-            ".greeting h2 { color: #333; font-size: 18px; margin-bottom: 10px; }"
-            ".greeting p { color: #666; font-size: 14px; line-height: 1.6; }"
-            ".info-box { background: #f8f8f8; padding: 15px 20px; border-radius: 6px; margin-bottom: 20px; }"
-            ".info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #e8e8e8; }"
-            ".info-row:last-child { border-bottom: none; }"
-            ".info-label { color: #999; font-size: 12px; text-transform: uppercase; font-weight: 600; }"
-            ".info-value { color: #333; font-weight: 600; }"
-            ".highlight { color: #7C3AED; font-weight: 700; }"
-            ".thanks { background: linear-gradient(135deg, rgba(124,58,237,0.08) 0%, rgba(167,139,250,0.08) 100%); padding: 25px; border-radius: 6px; text-align: center; margin: 25px 0; border-left: 4px solid #7C3AED; }"
-            ".thanks h2 { color: #7C3AED; font-size: 18px; margin-bottom: 8px; }"
-            ".thanks p { color: #666; font-size: 13px; line-height: 1.7; }"
-            ".pdf-notice { background: #EDE9FE; border: 1px solid #7C3AED; border-radius: 6px; padding: 12px 16px; text-align: center; margin: 20px 0; font-size: 13px; color: #5B21B6; }"
-            ".footer { background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #e0e0e0; }"
-            ".footer p { margin: 3px 0; }"
+            "body{font-family:Arial,sans-serif;background:#f5f5f5}"
+            ".container{max-width:600px;margin:0 auto;background:white;border-radius:8px;overflow:hidden}"
+            ".header{background:linear-gradient(135deg,#7C3AED,#a78bfa);color:white;padding:30px;text-align:center}"
+            ".header h1{margin:0;font-size:28px}"
+            ".content{padding:30px}"
+            ".greeting{background:#f8f8f8;padding:20px;border-radius:6px;border-left:4px solid #7C3AED;margin-bottom:20px}"
+            ".info{background:#f8f8f8;padding:15px;border-radius:6px;margin-bottom:20px}"
+            ".thanks{background:rgba(124,58,237,0.08);padding:25px;border-radius:6px;text-align:center;border-left:4px solid #7C3AED}"
+            ".footer{background:#f0f0f0;padding:20px;text-align:center;font-size:12px;color:#999}"
             "</style></head><body>"
             "<div class='container'>"
-            "<div class='header'>"
-            "<h1>✨ LUMEON</h1>"
-            "<p>Cuidamos tu luz natural</p>"
-            "</div>"
+            "<div class='header'><h1>✨ LUMEON</h1><p>Cuidamos tu luz natural</p></div>"
             "<div class='content'>"
-            "<div class='greeting'>"
-            f"<h2>¡Hola {nombre_display}!</h2>"
-            "<p>Tu compra ha sido procesada exitosamente. Aquí encontrarás el detalle de tu recibo.</p>"
+            f"<div class='greeting'><h2>¡Hola {nombre_display}!</h2>"
+            "<p>Tu compra ha sido procesada exitosamente.</p></div>"
+            "<div class='info'>"
+            f"<p><strong>Factura:</strong> #{numero_factura}</p>"
+            "<p><strong>Estado:</strong> ✓ Completado</p>"
+            f"<p><strong>Cliente:</strong> {nombre_display}</p>"
             "</div>"
-            "<div class='info-box'>"
-            "<div class='info-row'>"
-            "<span class='info-label'>Número de Factura</span>"
-            f"<span class='highlight'>#{numero_factura}</span>"
+            "<p style='text-align:center;color:#7C3AED;font-weight:bold'>📎 Tu recibo completo está adjunto en PDF</p>"
+            "<div class='thanks'><h2>¡Gracias por tu confianza!</h2>"
+            "<p>En LUMEON nos complace contar con clientes como tú.</p></div>"
             "</div>"
-            "<div class='info-row'>"
-            "<span class='info-label'>Estado</span>"
-            "<span class='info-value'>✓ Completado</span>"
-            "</div>"
-            "<div class='info-row'>"
-            "<span class='info-label'>Cliente</span>"
-            f"<span class='info-value'>{nombre_display}</span>"
-            "</div>"
-            "</div>"
-            "<div class='pdf-notice'>"
-            "📎 <strong>Tu recibo completo está adjunto en PDF</strong><br>"
-            "Puedes guardarlo, compartirlo o imprimirlo cuando quieras."
-            "</div>"
-            "<div class='thanks'>"
-            "<h2>¡Gracias por tu confianza!</h2>"
-            "<p>En LUMEON nos complace contar con clientes como tú. Tu satisfacción es nuestro mayor compromiso. "
-            "Si tienes alguna pregunta, no dudes en contactarnos.</p>"
-            "</div>"
-            "</div>"
-            "<div class='footer'>"
-            "<p><strong>LUMEON</strong> | Cuidamos tu luz natural</p>"
-            "<p>Este es un correo automático, por favor no responder directamente.</p>"
-            "</div>"
-            "</div>"
-            "</body></html>"
+            "<div class='footer'><p><strong>LUMEON</strong> | Cuidamos tu luz natural</p>"
+            "<p>Correo automático, por favor no responder.</p></div>"
+            "</div></body></html>"
         )
- 
-        # Parte alternativa con HTML
-        alt_part = MIMEMultipart('alternative')
-        alt_part.attach(MIMEText(body_html, 'html', 'utf-8'))
-        msg.attach(alt_part)
- 
-        # ✅ Adjuntar PDF
+
+        # Leer PDF y convertir a base64
+        import base64
         pdf_buffer.seek(0)
-        attachment = MIMEBase('application', 'octet-stream')
-        attachment.set_payload(pdf_buffer.read())
-        encoders.encode_base64(attachment)
-        attachment.add_header(
-            'Content-Disposition',
-            'attachment',
-            filename=f"Recibo_LUMEON_{numero_factura}.pdf"
+        pdf_b64 = base64.b64encode(pdf_buffer.read()).decode('utf-8')
+
+        payload = {
+            "from": f"{from_name} <onboarding@resend.dev>",
+            "to": [email_cliente],
+            "subject": f"Tu Recibo LUMEON #{numero_factura} ✓",
+            "html": html_body,
+            "attachments": [
+                {
+                    "filename": f"Recibo_LUMEON_{numero_factura}.pdf",
+                    "content": pdf_b64
+                }
+            ]
+        }
+
+        data = json_lib.dumps(payload).encode('utf-8')
+        req = urllib_req.Request(
+            'https://api.resend.com/emails',
+            data=data,
+            headers={
+                'Authorization': f'Bearer {resend_key}',
+                'Content-Type': 'application/json'
+            },
+            method='POST'
         )
-        msg.attach(attachment)
- 
-        # ✅ Enviar con SMTP_SSL (puerto 465)
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(gmail_user, gmail_pass)
-            server.send_message(msg)
- 
-        print(f"✅ Recibo enviado exitosamente a: {email_cliente}")
-        return True
- 
-    except smtplib.SMTPAuthenticationError:
-        print("❌ Error de autenticación Gmail. Verifica GMAIL_USER y GMAIL_PASSWORD en .env")
-        print("   💡 Recuerda usar una 'Contraseña de aplicación', no tu contraseña normal.")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"❌ Error SMTP al enviar email: {e}")
-        return False
+
+        with urllib_req.urlopen(req, timeout=30) as response:
+            result = json_lib.loads(response.read().decode('utf-8'))
+            print(f"✅ Email enviado exitosamente via Resend: {result.get('id', 'ok')}")
+            return True
+
     except Exception as e:
-        print(f"❌ Error inesperado al enviar email: {e}")
+        print(f"❌ Error al enviar email via Resend: {e}")
         return False
- 
- 
+
+
 def generar_factura_pdf(venta_id):
     """Genera un PDF profesional del recibo"""
     try:

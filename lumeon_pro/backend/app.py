@@ -761,12 +761,13 @@ def create_venta():
             gan = sum(it["cantidad"] * (it["precio_venta"] - it.get("precio_compra", 0)) for it in items)
  
             c.execute(
-                "INSERT INTO ventas (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO ventas (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id,ciclo,fecha_inicio_ciclo,fecha_fin_ciclo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     d["numero_factura"], d.get("cliente_id"), d.get("cliente_nombre", ""),
                     d.get("cliente_email", ""), d.get("cliente_telefono", ""),
                     d.get("fecha", datetime.now().isoformat()), d.get("forma_pago", "Contado"),
-                    sub, sub, gan, d.get("estado", "Pendiente"), d.get("notas", ""), current_user.id
+                    sub, sub, gan, d.get("estado", "Pendiente"), d.get("notas", ""), current_user.id,
+                    d.get("ciclo", ""), d.get("fecha_inicio_ciclo", ""), d.get("fecha_fin_ciclo", "")
                 )
             )
             vid = c.lastrowid
@@ -895,6 +896,22 @@ def update_venta_estado(vid):
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
+
+@app.route("/api/ventas/<int:vid>", methods=["PUT"])
+@login_required
+def update_venta(vid):
+    d = request.json
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE ventas SET estado=?,ciclo=?,forma_pago=?,notas=?,cliente_email=?,cliente_telefono=?,fecha_inicio_ciclo=?,fecha_fin_ciclo=? WHERE id=?",
+        (d.get("estado","Pendiente"), d.get("ciclo",""), d.get("forma_pago","Contado"),
+         d.get("notas",""), d.get("cliente_email",""), d.get("cliente_telefono",""),
+         d.get("fecha_inicio_ciclo",""), d.get("fecha_fin_ciclo",""), vid)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
  
 # ═════════════════════════════════════════════════════════════════════════
 # PEDIDOS
@@ -965,6 +982,96 @@ def update_pedido_estado(pid):
 # DEVOLUCIONES
 # ═════════════════════════════════════════════════════════════════════════
  
+
+@app.route("/api/ventas/<int:vid>", methods=["DELETE"])
+@login_required
+def delete_venta(vid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM venta_items WHERE venta_id=?", (vid,))
+    c.execute("DELETE FROM ventas WHERE id=?", (vid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/pedidos/<int:pid>", methods=["DELETE"])
+@login_required
+def delete_pedido(pid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM pedido_items WHERE pedido_id=?", (pid,))
+    c.execute("DELETE FROM pedidos WHERE id=?", (pid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/clientes/<int:cid>", methods=["DELETE"])
+@login_required
+def delete_cliente(cid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM clientes WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+def get_ciclos():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT ciclo FROM ventas WHERE ciclo IS NOT NULL AND ciclo != '' ORDER BY ciclo")
+    ciclos = [r[0] for r in c.fetchall()]
+    conn.close()
+    return jsonify(ciclos)
+
+
+
+
+@app.route("/api/ciclos", methods=["GET"])
+@login_required
+def get_ciclos():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT ciclo FROM ventas WHERE ciclo IS NOT NULL AND ciclo != '' ORDER BY ciclo")
+    ciclos = [r[0] for r in c.fetchall()]
+    conn.close()
+    return jsonify(ciclos)
+
+@app.route("/api/ciclos/<path:ciclo>/resumen", methods=["GET"])
+@login_required
+def get_ciclo_resumen(ciclo):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id,numero_factura,cliente_nombre,total,ganancia,estado,fecha,fecha_inicio_ciclo,fecha_fin_ciclo FROM ventas WHERE ciclo=? ORDER BY id DESC", (ciclo,))
+    ventas = [dict(r) for r in c.fetchall()]
+    total_ciclo = sum(v["total"] for v in ventas)
+    ganancia_ciclo = sum(v["ganancia"] for v in ventas)
+    fecha_inicio = ventas[0].get("fecha_inicio_ciclo","") if ventas else ""
+    fecha_fin = ventas[0].get("fecha_fin_ciclo","") if ventas else ""
+    venta_ids = [v["id"] for v in ventas]
+    productos = []
+    compradores = {}
+    if venta_ids:
+        placeholders = ",".join("?" * len(venta_ids))
+        c.execute(f"SELECT vi.referencia,vi.nombre,SUM(vi.cantidad) as total_cant,SUM(vi.subtotal) as total_venta,SUM(vi.ganancia) as total_gan FROM venta_items vi WHERE vi.venta_id IN ({placeholders}) GROUP BY vi.referencia,vi.nombre ORDER BY total_cant DESC", venta_ids)
+        productos = [dict(r) for r in c.fetchall()]
+        # Compradores con sus productos
+        for v in ventas:
+            c.execute("SELECT referencia,nombre,cantidad,subtotal FROM venta_items WHERE venta_id=?", (v["id"],))
+            items = [dict(r) for r in c.fetchall()]
+            nombre = v["cliente_nombre"] or "Sin cliente"
+            if nombre not in compradores:
+                compradores[nombre] = {"items":[],"total":0}
+            for it in items:
+                compradores[nombre]["items"].append(it)
+                compradores[nombre]["total"] += it["subtotal"]
+    conn.close()
+    return jsonify({
+        "ciclo":ciclo,"ventas":ventas,"productos":productos,
+        "total":total_ciclo,"ganancia":ganancia_ciclo,"num_ventas":len(ventas),
+        "fecha_inicio":fecha_inicio,"fecha_fin":fecha_fin,
+        "compradores":compradores
+    })
+
 @app.route("/api/devoluciones", methods=["GET"])
 @login_required
 def get_devoluciones():

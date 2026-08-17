@@ -10,16 +10,22 @@ from services.whatsapp_service import CallMeBotProvider, WhatsAppError, build_in
 def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: str,
                     phone: str, items: list[dict], total: float,
                     force_retry: bool = False) -> dict:
+    sale = conn.execute("SELECT estado FROM ventas WHERE id=? LIMIT 1", (sale_id,)).fetchone()
+    if not sale:
+        return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="NOT_FOUND")}
+    if str(sale["estado"] or "").strip().lower() in {"devuelta", "anulada", "cancelada"}:
+        return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="BLOCKED", error="La venta no admite entrega")}
+
     invoice = build_invoice(invoice_number=invoice_number, customer_name=customer_name, items=items, total=total)
     result = {"invoice": invoice, "whatsapp": None}
     phone = str(phone or "").strip()
     if not phone:
         return result
 
-    if not force_retry and not can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone):
-        return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status="ALREADY_SENT")}
-    if force_retry and not can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone):
-        return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status="RETRY_NOT_ALLOWED")}
+    allowed = can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone)
+    if not allowed:
+        status = "RETRY_NOT_ALLOWED" if force_retry else "ALREADY_SENT"
+        return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status=status)}
 
     api_key = os.getenv("CALLMEBOT_API_KEY", "").strip()
     if not api_key:

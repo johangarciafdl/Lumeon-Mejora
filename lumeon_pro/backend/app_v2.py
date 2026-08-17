@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 
 from core.config import load_settings
 from core.db import get_db, transaction
@@ -22,11 +22,7 @@ settings = load_settings()
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
 app.secret_key = settings.secret_key
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=settings.session_cookie_secure,
-    SESSION_COOKIE_SAMESITE="Lax",
-)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=settings.session_cookie_secure, SESSION_COOKIE_SAMESITE="Lax")
 
 
 @app.after_request
@@ -46,7 +42,6 @@ def security_headers(response):
 
 @app.route("/", methods=["GET"])
 def index():
-    """Serve the existing dashboard with the V2 assistant assets injected."""
     path = Path(app.static_folder) / "index.html"
     html = path.read_text(encoding="utf-8")
     if "/assistant.css" not in html:
@@ -90,7 +85,6 @@ def create_venta_v2():
 
 @app.route("/api/v2/assistant/action", methods=["POST"])
 def assistant_action():
-    """Safe assistant gateway: propose first, then confirm with a short-lived server-side action."""
     try:
         actor = current_actor()
         body = request.get_json(silent=True) or {}
@@ -105,12 +99,12 @@ def assistant_action():
                 return jsonify({"ok": False, "error": "Acción aún no conectada al ejecutor V2"}), 400
             with transaction() as conn:
                 action_id = create_pending(conn, user_id=int(actor.id), intent=intent, payload=payload)
-            message = {
+            messages = {
                 "create_sale": "Voy a crear la venta, generar la factura y avisar por WhatsApp si hay teléfono. ¿Confirmas?",
                 "create_customer": "Voy a registrar este cliente. ¿Confirmas?",
                 "create_product": "Voy a registrar este producto. ¿Confirmas?",
-            }[intent]
-            return jsonify({"ok": True, "status": "confirmation_required", "action_id": action_id, "message": message}), 200
+            }
+            return jsonify({"ok": True, "status": "confirmation_required", "action_id": action_id, "message": messages[intent]}), 200
 
         if mode == "cancel":
             action_id = str(body.get("action_id", "")).strip()
@@ -130,16 +124,10 @@ def assistant_action():
                     result = AssistantSaleService(settings).execute(conn, actor_id=int(actor.id), data=payload)
                     return jsonify({"ok": True, "status": "completed", "sale_id": result.sale_id, "invoice": result.invoice_number, "invoice_file": result.invoice_filename, "whatsapp": result.whatsapp_status, "whatsapp_error": result.whatsapp_error}), 201
                 if intent == "create_customer":
-                    try:
-                        entity_id = create_customer(conn, payload)
-                    except CustomerError as exc:
-                        return jsonify({"ok": False, "status": "error", "error": str(exc)}), 400
+                    entity_id = create_customer(conn, payload)
                     return jsonify({"ok": True, "status": "completed", "entity": "cliente", "id": entity_id}), 201
                 if intent == "create_product":
-                    try:
-                        entity_id = create_product(conn, payload)
-                    except ProductError as exc:
-                        return jsonify({"ok": False, "status": "error", "error": str(exc)}), 400
+                    entity_id = create_product(conn, payload)
                     return jsonify({"ok": True, "status": "completed", "entity": "producto", "id": entity_id}), 201
 
         return jsonify({"ok": False, "error": "Modo inválido"}), 400
@@ -147,8 +135,8 @@ def assistant_action():
         return jsonify({"ok": False, "error": str(exc)}), 401
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
-    except (SaleError, ValueError) as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    except (CustomerError, ProductError, SaleError, ValueError) as exc:
+        return jsonify({"ok": False, "status": "validation_error", "error": str(exc)}), 400
     except Exception:
         app.logger.exception("Error en acción del asistente")
         return jsonify({"ok": False, "error": "Error interno"}), 500

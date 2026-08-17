@@ -19,8 +19,14 @@ def _invoice_number() -> str:
 def create_sale(conn, *, data: dict, user_id: int) -> int:
     items = data.get("items") or []
     numero_factura = str(data.get("numero_factura", "")).strip() or _invoice_number()
+    idempotency_key = str(data.get("idempotency_key", "")).strip() or None
     if not items:
         raise SaleError("Sin productos")
+
+    if idempotency_key:
+        existing = conn.execute("SELECT id FROM ventas WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+        if existing:
+            return int(existing["id"])
 
     subtotal = 0.0
     profit = 0.0
@@ -40,38 +46,36 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
 
     try:
         reserve_items(conn, items)
-
         row = conn.execute(
             """INSERT INTO ventas
-            (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
+            (numero_factura,idempotency_key,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
              fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
             (
-                numero_factura, data.get("cliente_id"), data.get("cliente_nombre", ""),
+                numero_factura, idempotency_key, data.get("cliente_id"), data.get("cliente_nombre", ""),
                 data.get("cliente_email", ""), data.get("cliente_telefono", ""),
                 data.get("fecha", datetime.now().isoformat()), data.get("forma_pago", "Contado"),
-                subtotal, subtotal, profit, data.get("estado", "Pendiente"),
-                data.get("notas", ""), user_id,
+                subtotal, subtotal, profit, data.get("estado", "Pendiente"), data.get("notas", ""), user_id,
             ),
         ).fetchone()
         sale_id = int(row["id"])
-
         for item, quantity, sale_price, purchase_price in normalized:
             conn.execute(
                 """INSERT INTO venta_items
                 (venta_id,producto_id,referencia,nombre,cantidad,precio_compra,precio_venta,subtotal,ganancia)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
-                (
-                    sale_id, item.get("producto_id"), item.get("referencia", ""), item.get("nombre", ""),
-                    quantity, purchase_price, sale_price, quantity * sale_price,
-                    quantity * (sale_price - purchase_price),
-                ),
+                (sale_id, item.get("producto_id"), item.get("referencia", ""), item.get("nombre", ""),
+                 quantity, purchase_price, sale_price, quantity * sale_price,
+                 quantity * (sale_price - purchase_price)),
             )
-
         audit(conn, actor_id=user_id, action="sale.created", entity="venta", entity_id=sale_id,
               details={"invoice": numero_factura, "total": subtotal, "items": len(normalized)})
         return sale_id
     except Exception as exc:
         if isinstance(exc, SaleError):
             raise
+        if "unique" in str(exc).lower() and idempotency_key:
+            existing = conn.execute("SELECT id FROM ventas WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if existing:
+                return int(existing["id"])
         raise SaleError("No fue posible crear la venta") from exc

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import secrets
 
 from services.inventory_service import reserve_items
+from services.audit_service import record as audit
 
 
 class SaleError(ValueError):
@@ -37,33 +38,40 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
         profit += quantity * (sale_price - purchase_price)
         normalized.append((item, quantity, sale_price, purchase_price))
 
-    reserve_items(conn, items)
+    try:
+        reserve_items(conn, items)
 
-    row = conn.execute(
-        """INSERT INTO ventas
-        (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
-         fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
-        (
-            numero_factura, data.get("cliente_id"), data.get("cliente_nombre", ""),
-            data.get("cliente_email", ""), data.get("cliente_telefono", ""),
-            data.get("fecha", datetime.now().isoformat()), data.get("forma_pago", "Contado"),
-            subtotal, subtotal, profit, data.get("estado", "Pendiente"),
-            data.get("notas", ""), user_id,
-        ),
-    ).fetchone()
-    sale_id = int(row["id"])
-
-    for item, quantity, sale_price, purchase_price in normalized:
-        conn.execute(
-            """INSERT INTO venta_items
-            (venta_id,producto_id,referencia,nombre,cantidad,precio_compra,precio_venta,subtotal,ganancia)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+        row = conn.execute(
+            """INSERT INTO ventas
+            (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
+             fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
             (
-                sale_id, item.get("producto_id"), item.get("referencia", ""), item.get("nombre", ""),
-                quantity, purchase_price, sale_price, quantity * sale_price,
-                quantity * (sale_price - purchase_price),
+                numero_factura, data.get("cliente_id"), data.get("cliente_nombre", ""),
+                data.get("cliente_email", ""), data.get("cliente_telefono", ""),
+                data.get("fecha", datetime.now().isoformat()), data.get("forma_pago", "Contado"),
+                subtotal, subtotal, profit, data.get("estado", "Pendiente"),
+                data.get("notas", ""), user_id,
             ),
-        )
+        ).fetchone()
+        sale_id = int(row["id"])
 
-    return sale_id
+        for item, quantity, sale_price, purchase_price in normalized:
+            conn.execute(
+                """INSERT INTO venta_items
+                (venta_id,producto_id,referencia,nombre,cantidad,precio_compra,precio_venta,subtotal,ganancia)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    sale_id, item.get("producto_id"), item.get("referencia", ""), item.get("nombre", ""),
+                    quantity, purchase_price, sale_price, quantity * sale_price,
+                    quantity * (sale_price - purchase_price),
+                ),
+            )
+
+        audit(conn, actor_id=user_id, action="sale.created", entity="venta", entity_id=sale_id,
+              details={"invoice": numero_factura, "total": subtotal, "items": len(normalized)})
+        return sale_id
+    except Exception as exc:
+        if isinstance(exc, SaleError):
+            raise
+        raise SaleError("No fue posible crear la venta") from exc

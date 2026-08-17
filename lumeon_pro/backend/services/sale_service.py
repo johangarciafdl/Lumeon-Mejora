@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+import secrets
 
 from services.inventory_service import reserve_items
 
@@ -9,10 +10,14 @@ class SaleError(ValueError):
     pass
 
 
+def _invoice_number() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return f"LUM-{stamp}-{secrets.token_hex(3).upper()}"
+
+
 def create_sale(conn, *, data: dict, user_id: int) -> int:
     items = data.get("items") or []
-    if not str(data.get("numero_factura", "")).strip():
-        raise SaleError("El número de factura es obligatorio")
+    numero_factura = str(data.get("numero_factura", "")).strip() or _invoice_number()
     if not items:
         raise SaleError("Sin productos")
 
@@ -40,7 +45,7 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
          fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
         (
-            data["numero_factura"], data.get("cliente_id"), data.get("cliente_nombre", ""),
+            numero_factura, data.get("cliente_id"), data.get("cliente_nombre", ""),
             data.get("cliente_email", ""), data.get("cliente_telefono", ""),
             data.get("fecha", datetime.now().isoformat()), data.get("forma_pago", "Contado"),
             subtotal, subtotal, profit, data.get("estado", "Pendiente"),

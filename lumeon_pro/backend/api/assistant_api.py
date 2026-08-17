@@ -54,14 +54,15 @@ def _json_product(body: dict):
     return product
 
 
-def _deliver_sale_invoice(conn, sale_id: int) -> dict:
-    """Build the invoice and deliver it after the sale transaction commits."""
+def _deliver_sale_invoice(conn, sale_id: int, force_retry: bool = False) -> dict:
     from services.invoice_delivery_service import deliver_invoice
-    sale = conn.execute("SELECT id, numero_factura, cliente_nombre, cliente_telefono, total FROM ventas WHERE id=?", (sale_id,)).fetchone()
+    sale = conn.execute("SELECT id, numero_factura, cliente_nombre, cliente_telefono, total, estado FROM ventas WHERE id=?", (sale_id,)).fetchone()
     if not sale:
         return {"status": "SKIPPED", "error": "Venta no encontrada"}
+    if str(sale["estado"] or "").lower() in {"anulada", "anulado", "cancelada", "cancelado", "devuelta", "devolucion"}:
+        return {"status": "SKIPPED", "error": "No se puede enviar factura de una venta anulada/devuelta"}
     items = conn.execute("SELECT producto_id, referencia, nombre, cantidad, precio_compra, precio_venta FROM venta_items WHERE venta_id=? ORDER BY id", (sale_id,)).fetchall()
-    result = deliver_invoice(conn, sale_id=sale_id, invoice_number=sale["numero_factura"], customer_name=sale["cliente_nombre"] or "Consumidor final", phone=sale["cliente_telefono"] or "", items=[dict(row) for row in items], total=float(sale["total"] or 0))
+    result = deliver_invoice(conn, sale_id=sale_id, invoice_number=sale["numero_factura"], customer_name=sale["cliente_nombre"] or "Consumidor final", phone=sale["cliente_telefono"] or "", items=[dict(row) for row in items], total=float(sale["total"] or 0), force_retry=force_retry)
     conn.commit()
     whatsapp = result.get("whatsapp")
     return {"invoice": {"filename": result["invoice"].filename, "content_type": result["invoice"].content_type}, "whatsapp": None if whatsapp is None else {"status": whatsapp.status, "error": whatsapp.error}}
@@ -103,11 +104,13 @@ def message():
                     elif intent == "create_sale":
                         from services.sale_service import create_sale
                         entity_id = create_sale(tx, data=payload, user_id=actor.id); entity = "venta"
+                    elif intent == "send_invoice":
+                        entity_id = int(payload["sale_id"]); entity = "venta"
                     else:
                         raise ValueError(f"Intent no soportado: {intent}")
                     record(tx, actor_id=actor.id, action=f"assistant.{intent}", entity=entity, entity_id=entity_id, details={"session_id": session_id, "idempotency_key": idem_key})
                     save_session(tx, session_id, None, {})
-                delivery = _deliver_sale_invoice(conn, entity_id) if intent == "create_sale" else None
+                delivery = _deliver_sale_invoice(conn, entity_id) if intent in {"create_sale", "send_invoice"} else None
                 response = {"ok": True, "status": "executed", "intent": intent, "entity": entity, "id": entity_id}
                 if delivery is not None:
                     response["invoice_delivery"] = delivery
@@ -121,6 +124,23 @@ def message():
             cancelled = session.cancel(); _save_session(conn, session_id, session); conn.commit()
             return jsonify({"ok": True, "status": "cancelled" if cancelled else "idle"})
 
+        if lowered.startswith(("enviar factura", "mandar factura")):
+            require(actor, "send_invoice")
+            parts = text.split()
+            sale_id = None
+            if parts and parts[-1].isdigit():
+                sale_id = int(parts[-1])
+            if not sale_id and body.get("sale_id"):
+                sale_id = int(body["sale_id"])
+            if not sale_id:
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica el ID de la venta. Ejemplo: enviar factura 123"})
+            exists = conn.execute("SELECT id, numero_factura, cliente_nombre, total FROM ventas WHERE id=?", (sale_id,)).fetchone()
+            if not exists:
+                return jsonify({"ok": False, "status": "validation_error", "error": "Venta no encontrada"}), 404
+            response = session.propose("send_invoice", {"sale_id": sale_id})
+            _save_session(conn, session_id, session); conn.commit()
+            return jsonify({"ok": True, **response, "message": f"Voy a enviar la factura {exists['numero_factura']} por WhatsApp. ¿Confirmas?"})
+
         if lowered.startswith("iniciar venta"):
             require(actor, "create_sale")
             try: response = session.start_sale(_json_customer(body))
@@ -130,8 +150,7 @@ def message():
 
         if lowered.startswith("agregar producto"):
             require(actor, "create_sale")
-            try:
-                response = session.add_sale_item(_json_product(body), int(body.get("quantity", 0)))
+            try: response = session.add_sale_item(_json_product(body), int(body.get("quantity", 0)))
             except (ValueError, TypeError) as exc: return jsonify({"ok": False, "status": "needs_input", "error": str(exc)}), 400
             _save_session(conn, session_id, session); conn.commit()
             return jsonify({"ok": True, **response})
@@ -169,7 +188,7 @@ def message():
             response = session.propose("create_product", payload); _save_session(conn, session_id, session); conn.commit()
             return jsonify({"ok": True, **response})
 
-        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock, registrar datos o construir una venta."})
+        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock, registrar datos, construir ventas y enviar facturas por WhatsApp."})
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except Exception:

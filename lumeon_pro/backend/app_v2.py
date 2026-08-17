@@ -18,6 +18,7 @@ from services.authorization_service import require
 from services.customer_service import CustomerError, create_customer
 from services.product_service import ProductError, create_product
 from services.sale_service import SaleError, create_sale
+from services.migration_service import apply_pending
 
 
 dotenv.load_dotenv()
@@ -33,6 +34,25 @@ app.config.update(
 app.register_blueprint(assistant_api)
 app.register_blueprint(invoice_api)
 app.register_blueprint(delivery_api)
+
+
+def initialize_database() -> None:
+    """Apply additive migrations when the application starts.
+
+    Startup is deliberately fail-fast in production: serving requests against a
+    partially migrated schema is more dangerous than refusing to start.
+    """
+    conn = get_db()
+    try:
+        apply_pending(conn)
+    finally:
+        conn.close()
+
+
+# Migrations are opt-in during tests to avoid mutating a test database merely by
+# importing the module. Production/development can enable them with the flag.
+if os.getenv("LUMEON_AUTO_MIGRATE", "false").lower() in {"1", "true", "yes"}:
+    initialize_database()
 
 
 @app.after_request
@@ -79,78 +99,29 @@ def create_venta_v2():
         actor = current_actor()
         require(actor, "create_sale")
         data = request.get_json(silent=True) or {}
-        with transaction() as conn:
-            sale_id = create_sale(conn, data=data, user_id=int(actor.id or 0))
-        return jsonify({"ok": True, "id": sale_id}), 201
-    except AuthenticationError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 401
-    except PermissionError as exc:
+        conn = get_db()
+        try:
+            sale_id = create_sale(conn, data=data, user_id=actor.user_id)
+            conn.commit()
+            return jsonify({"ok": True, "venta_id": sale_id}), 201
+        finally:
+            conn.close()
+    except (AuthenticationError, PermissionError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
-    except (SaleError, ValueError) as exc:
+    except SaleError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
-        app.logger.exception("Error creando venta V2")
-        return jsonify({"ok": False, "error": "Error interno"}), 500
 
 
-@app.route("/api/v2/assistant/action", methods=["POST"])
-def assistant_action():
-    try:
-        actor = current_actor()
-        body = request.get_json(silent=True) or {}
-        mode = str(body.get("mode", "propose")).strip().lower()
-
-        if mode == "propose":
-            intent = str(body.get("intent", "")).strip()
-            payload = body.get("payload") or {}
-            require(actor, intent)
-            supported = {"create_sale", "create_customer", "create_product"}
-            if intent not in supported:
-                return jsonify({"ok": False, "error": "Acción aún no conectada al ejecutor V2"}), 400
-            with transaction() as conn:
-                action_id = create_pending(conn, user_id=int(actor.id), intent=intent, payload=payload)
-            messages = {
-                "create_sale": "Voy a crear la venta, generar la factura y avisar por WhatsApp si hay teléfono. ¿Confirmas?",
-                "create_customer": "Voy a registrar este cliente. ¿Confirmas?",
-                "create_product": "Voy a registrar este producto. ¿Confirmas?",
-            }
-            return jsonify({"ok": True, "status": "confirmation_required", "action_id": action_id, "message": messages[intent]}), 200
-
-        if mode == "cancel":
-            action_id = str(body.get("action_id", "")).strip()
-            with transaction() as conn:
-                row = consume_pending(conn, user_id=int(actor.id), action_id=action_id)
-            return jsonify({"ok": True, "cancelled": row is not None})
-
-        if mode == "confirm":
-            action_id = str(body.get("action_id", "")).strip()
-            with transaction() as conn:
-                pending = consume_pending(conn, user_id=int(actor.id), action_id=action_id)
-                if not pending:
-                    return jsonify({"ok": False, "error": "La confirmación no existe o expiró"}), 409
-                intent, payload = pending
-                require(actor, intent)
-                if intent == "create_sale":
-                    result = AssistantSaleService().execute(conn, actor_id=int(actor.id), data=payload)
-                    return jsonify({"ok": True, "status": "completed", "sale_id": result.sale_id, "invoice": result.invoice_number, "invoice_file": result.invoice_filename, "whatsapp": result.whatsapp_status, "whatsapp_error": result.whatsapp_error}), 201
-                if intent == "create_customer":
-                    entity_id = create_customer(conn, payload)
-                    return jsonify({"ok": True, "status": "completed", "entity": "cliente", "id": entity_id}), 201
-                if intent == "create_product":
-                    entity_id = create_product(conn, payload)
-                    return jsonify({"ok": True, "status": "completed", "entity": "producto", "id": entity_id}), 201
-
-        return jsonify({"ok": False, "error": "Modo inválido"}), 400
-    except AuthenticationError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 401
-    except PermissionError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 403
-    except (CustomerError, ProductError, SaleError, ValueError) as exc:
-        return jsonify({"ok": False, "status": "validation_error", "error": str(exc)}), 400
-    except Exception:
-        app.logger.exception("Error en acción del asistente")
-        return jsonify({"ok": False, "error": "Error interno"}), 500
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({"ok": False, "error": "Solicitud inválida"}), 400
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"ok": False, "error": "Recurso no encontrado"}), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({"ok": False, "error": "Método no permitido"}), 405

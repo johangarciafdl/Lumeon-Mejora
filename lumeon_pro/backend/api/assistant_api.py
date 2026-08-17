@@ -28,11 +28,7 @@ def _load_session(conn, session_id: str) -> AssistantSession:
     draft = session.pending_payload.pop("__sale_draft", None)
     if draft:
         from services.assistant_sale_builder import SaleDraft
-        session.sale_draft = SaleDraft(
-            customer_id=draft.get("customer_id"),
-            customer_name=draft.get("customer_name", ""),
-            items=draft.get("items", []),
-        )
+        session.sale_draft = SaleDraft(customer_id=draft.get("customer_id"), customer_name=draft.get("customer_name", ""), items=draft.get("items", []))
     return session
 
 
@@ -55,6 +51,36 @@ def _json_product(body: dict):
     if not product.get("id"):
         raise ValueError("Debes proporcionar product.id")
     return product
+
+
+def _deliver_sale_invoice(conn, sale_id: int) -> dict:
+    """Build the invoice and deliver it after the sale transaction commits."""
+    from services.invoice_delivery_service import deliver_invoice
+    sale = conn.execute(
+        """SELECT id, numero_factura, cliente_nombre, cliente_telefono, total
+           FROM ventas WHERE id=?""", (sale_id,)
+    ).fetchone()
+    if not sale:
+        return {"status": "SKIPPED", "error": "Venta no encontrada"}
+    items = conn.execute(
+        """SELECT producto_id, referencia, nombre, cantidad, precio_compra, precio_venta
+           FROM venta_items WHERE venta_id=? ORDER BY id""", (sale_id,)
+    ).fetchall()
+    result = deliver_invoice(
+        conn,
+        sale_id=sale_id,
+        invoice_number=sale["numero_factura"],
+        customer_name=sale["cliente_nombre"] or "Consumidor final",
+        phone=sale["cliente_telefono"] or "",
+        items=[dict(row) for row in items],
+        total=float(sale["total"] or 0),
+    )
+    conn.commit()
+    whatsapp = result.get("whatsapp")
+    return {
+        "invoice": {"filename": result["invoice"].filename, "content_type": result["invoice"].content_type},
+        "whatsapp": None if whatsapp is None else {"status": whatsapp.status, "error": whatsapp.error},
+    }
 
 
 @assistant_api.post("/message")
@@ -97,7 +123,11 @@ def message():
                         raise ValueError(f"Intent no soportado: {intent}")
                     record(tx, actor_id=actor.id, action=f"assistant.{intent}", entity=entity, entity_id=entity_id, details={"session_id": session_id})
                     save_session(tx, session_id, None, {})
-                return jsonify({"ok": True, "status": "executed", "intent": intent, "entity": entity, "id": entity_id})
+                delivery = _deliver_sale_invoice(conn, entity_id) if intent == "create_sale" else None
+                response = {"ok": True, "status": "executed", "intent": intent, "entity": entity, "id": entity_id}
+                if delivery is not None:
+                    response["invoice_delivery"] = delivery
+                return jsonify(response)
             except (CustomerError, ProductError, ValueError) as exc:
                 _save_session(conn, session_id, session)
                 conn.commit()

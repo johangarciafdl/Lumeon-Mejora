@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from flask import Flask, jsonify, request
-from flask_login import LoginManager
+import os
+
 import dotenv
+from flask import Flask, jsonify, request
 
 from core.config import load_settings
 from core.db import get_db, transaction
+from services.auth_service import AuthenticationError, current_actor
+from services.authorization_service import require
 from services.sale_service import SaleError, create_sale
 
 
@@ -19,8 +22,6 @@ app.config.update(
     SESSION_COOKIE_SECURE=settings.session_cookie_secure,
     SESSION_COOKIE_SAMESITE="Lax",
 )
-
-login_manager = LoginManager(app)
 
 
 @app.after_request
@@ -46,18 +47,23 @@ def health():
         conn.close()
         return jsonify({"ok": True, "service": "lumeon", "version": "2"})
     except Exception:
+        app.logger.exception("Health check failed")
         return jsonify({"ok": False, "service": "lumeon", "version": "2"}), 503
 
 
 @app.route("/api/v2/ventas", methods=["POST"])
 def create_venta_v2():
-    # This endpoint is intentionally a clean seam for migrating the legacy route.
-    # Authentication is added when the shared User loader is moved into core/auth.py.
-    data = request.get_json(silent=True) or {}
     try:
+        actor = current_actor()
+        require(actor, "create_sale")
+        data = request.get_json(silent=True) or {}
         with transaction() as conn:
-            sale_id = create_sale(conn, data=data, user_id=0)
+            sale_id = create_sale(conn, data=data, user_id=int(actor.id or 0))
         return jsonify({"ok": True, "id": sale_id}), 201
+    except AuthenticationError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
     except (SaleError, ValueError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception:
@@ -66,4 +72,4 @@ def create_venta_v2():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(__import__("os").getenv("PORT", "5000")), debug=False)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)

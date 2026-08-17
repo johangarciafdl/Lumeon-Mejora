@@ -16,6 +16,8 @@ class Settings:
     admin_email: str
     session_cookie_secure: bool
     database_url: str
+    callmebot_api_key: str
+    callmebot_default_phone: str
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -52,4 +54,6 @@ def load_settings() -> Settings:
         admin_email=os.getenv("ADMIN_EMAIL", "admin@lumeon.local").strip(),
         session_cookie_secure=_env_bool("SESSION_COOKIE_SECURE", production),
         database_url=os.getenv("DATABASE_URL", "").strip(),
+        callmebot_api_key=os.getenv("CALLMEBOT_API_KEY", "").strip(),
+        callmebot_default_phone=os.getenv("CALLMEBOT_DEFAULT_PHONE", "").strip(),
     )

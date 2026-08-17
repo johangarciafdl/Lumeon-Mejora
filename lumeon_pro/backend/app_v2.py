@@ -25,7 +25,11 @@ settings = load_settings()
 
 app = Flask(__name__, static_folder="../frontend", static_url_path="")
 app.secret_key = settings.secret_key
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=settings.session_cookie_secure, SESSION_COOKIE_SAMESITE="Lax")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=settings.session_cookie_secure,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 app.register_blueprint(assistant_api)
 app.register_blueprint(invoice_api)
 app.register_blueprint(delivery_api)
@@ -127,7 +131,7 @@ def assistant_action():
                 intent, payload = pending
                 require(actor, intent)
                 if intent == "create_sale":
-                    result = AssistantSaleService(settings).execute(conn, actor_id=int(actor.id), data=payload)
+                    result = AssistantSaleService().execute(conn, actor_id=int(actor.id), data=payload)
                     return jsonify({"ok": True, "status": "completed", "sale_id": result.sale_id, "invoice": result.invoice_number, "invoice_file": result.invoice_filename, "whatsapp": result.whatsapp_status, "whatsapp_error": result.whatsapp_error}), 201
                 if intent == "create_customer":
                     entity_id = create_customer(conn, payload)

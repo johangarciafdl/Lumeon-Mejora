@@ -7,6 +7,7 @@ from .delivery_api import delivery_api
 from .inventory_api import inventory_api
 from .invoice_api import invoice_api
 from .product_api import product_api
+from .sale_api import sale_api
 from .system_api import system_api
 
 
@@ -18,4 +19,5 @@ def register_blueprints(app):
     app.register_blueprint(inventory_api)
     app.register_blueprint(invoice_api)
     app.register_blueprint(product_api)
+    app.register_blueprint(sale_api)
     app.register_blueprint(system_api)

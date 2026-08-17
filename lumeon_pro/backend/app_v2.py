@@ -6,20 +6,15 @@ from pathlib import Path
 import dotenv
 from flask import Flask, jsonify, request
 
-from api.assistant_api import assistant_api
-from api.delivery_api import delivery_api
-from api.invoice_api import invoice_api
+from api import register_blueprints
 from core.config import load_settings
-from core.db import get_db, transaction
-from services.assistant_action_store import consume_pending, create_pending
-from services.assistant_sales_service import AssistantSaleService
+from core.db import get_db
 from services.auth_service import AuthenticationError, current_actor
 from services.authorization_service import require
-from services.customer_service import CustomerError, create_customer
-from services.product_service import ProductError, create_product
-from services.sale_service import SaleError, create_sale
 from services.migration_service import apply_pending
-
+from services.product_service import ProductError, create_product
+from services.customer_service import CustomerError, create_customer
+from services.sale_service import SaleError, create_sale
 
 dotenv.load_dotenv()
 settings = load_settings()
@@ -31,17 +26,10 @@ app.config.update(
     SESSION_COOKIE_SECURE=settings.session_cookie_secure,
     SESSION_COOKIE_SAMESITE="Lax",
 )
-app.register_blueprint(assistant_api)
-app.register_blueprint(invoice_api)
-app.register_blueprint(delivery_api)
+register_blueprints(app)
 
 
 def initialize_database() -> None:
-    """Apply additive migrations when the application starts.
-
-    Startup is deliberately fail-fast in production: serving requests against a
-    partially migrated schema is more dangerous than refusing to start.
-    """
     conn = get_db()
     try:
         apply_pending(conn)
@@ -49,8 +37,6 @@ def initialize_database() -> None:
         conn.close()
 
 
-# Migrations are opt-in during tests to avoid mutating a test database merely by
-# importing the module. Production/development can enable them with the flag.
 if os.getenv("LUMEON_AUTO_MIGRATE", "false").lower() in {"1", "true", "yes"}:
     initialize_database()
 
@@ -93,7 +79,7 @@ def health():
         return jsonify({"ok": False, "service": "lumeon", "version": "2"}), 503
 
 
-@app.route("/api/v2/ventas", methods=["POST"])
+@app.post("/api/v2/ventas")
 def create_venta_v2():
     try:
         actor = current_actor()
@@ -109,6 +95,42 @@ def create_venta_v2():
     except (AuthenticationError, PermissionError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except SaleError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/v2/clientes")
+def create_cliente_v2():
+    try:
+        actor = current_actor()
+        require(actor, "create_customer")
+        conn = get_db()
+        try:
+            customer_id = create_customer(conn, request.get_json(silent=True) or {})
+            conn.commit()
+            return jsonify({"ok": True, "cliente_id": customer_id}), 201
+        finally:
+            conn.close()
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+    except CustomerError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/v2/productos")
+def create_producto_v2():
+    try:
+        actor = current_actor()
+        require(actor, "create_product")
+        conn = get_db()
+        try:
+            product_id = create_product(conn, request.get_json(silent=True) or {})
+            conn.commit()
+            return jsonify({"ok": True, "producto_id": product_id}), 201
+        finally:
+            conn.close()
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+    except ProductError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 

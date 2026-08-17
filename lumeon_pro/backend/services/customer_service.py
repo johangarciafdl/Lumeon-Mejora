@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 
 
 class CustomerError(ValueError):
@@ -12,7 +11,7 @@ EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
 
 def normalize_customer(data: dict) -> dict:
-    name = str(data.get("nombre", "")).strip()
+    name = " ".join(str(data.get("nombre", "")).strip().split())
     if len(name) < 2 or len(name) > 120:
         raise CustomerError("El nombre del cliente no es válido")
     email = str(data.get("email", "")).strip().lower()
@@ -28,7 +27,7 @@ def normalize_customer(data: dict) -> dict:
     }
 
 
-def search_customers(conn: sqlite3.Connection, term: str, limit: int = 20) -> list[dict]:
+def search_customers(conn, term: str, limit: int = 20) -> list[dict]:
     term = str(term or "").strip()
     if not term:
         return []
@@ -36,23 +35,23 @@ def search_customers(conn: sqlite3.Connection, term: str, limit: int = 20) -> li
     like = f"%{term}%"
     rows = conn.execute(
         "SELECT id,nombre,documento,telefono,direccion,email,ciudad FROM clientes "
-        "WHERE nombre LIKE ? OR documento LIKE ? OR telefono LIKE ? OR email LIKE ? "
+        "WHERE nombre ILIKE ? OR documento ILIKE ? OR telefono ILIKE ? OR email ILIKE ? "
         "ORDER BY nombre LIMIT ?",
         (like, like, like, like, limit),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def create_customer(conn: sqlite3.Connection, data: dict) -> int:
+def create_customer(conn, data: dict) -> int:
     customer = normalize_customer(data)
     document = customer["documento"]
     if document:
         existing = conn.execute("SELECT id FROM clientes WHERE documento=?", (document,)).fetchone()
         if existing:
             raise CustomerError("Ya existe un cliente con ese documento")
-    cursor = conn.execute(
+    row = conn.execute(
         """INSERT INTO clientes (nombre,documento,telefono,direccion,email,ciudad)
-        VALUES (?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?) RETURNING id""",
         tuple(customer.values()),
-    )
-    return int(cursor.lastrowid)
+    ).fetchone()
+    return int(row["id"])

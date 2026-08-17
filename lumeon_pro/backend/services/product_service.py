@@ -13,7 +13,8 @@ def search_products(conn, term: str, limit: int = 20) -> list[dict]:
     like = f"%{term}%"
     rows = conn.execute(
         "SELECT id,nombre,referencia,stock,stock_minimo,precio_venta FROM productos "
-        "WHERE nombre ILIKE ? OR referencia ILIKE ? ORDER BY nombre LIMIT ?",
+        "WHERE LOWER(nombre) LIKE LOWER(?) OR LOWER(referencia) LIKE LOWER(?) "
+        "ORDER BY nombre LIMIT ?",
         (like, like, limit),
     ).fetchall()
     return [dict(row) for row in rows]

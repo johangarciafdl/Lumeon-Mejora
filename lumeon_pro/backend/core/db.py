@@ -7,19 +7,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-
 DB_PATH = Path(__file__).resolve().parents[1] / "database.db"
+_QMARK = re.compile(r"\?")
 
 
 class CompatRow(dict):
-    """Dict row that also supports legacy numeric indexing."""
+    """Mapping row compatible with legacy numeric indexing."""
     def __getitem__(self, key: Any):
         if isinstance(key, int):
             return tuple(self.values())[key]
         return super().__getitem__(key)
-
-
-_QMARK = re.compile(r"\?")
 
 
 class PostgresCursor:
@@ -37,6 +34,8 @@ class PostgresCursor:
         return CompatRow(zip([d.name for d in self._cursor.description], row))
 
     def fetchall(self):
+        if self._cursor.description is None:
+            return []
         columns = [d.name for d in self._cursor.description]
         return [CompatRow(zip(columns, row)) for row in self._cursor.fetchall()]
 
@@ -54,8 +53,7 @@ class PostgresConnection:
         self._conn = conn
 
     def execute(self, sql: str, params=()):
-        cursor = self._conn.cursor()
-        return PostgresCursor(cursor).execute(sql, params)
+        return PostgresCursor(self._conn.cursor()).execute(sql, params)
 
     def cursor(self):
         return PostgresCursor(self._conn.cursor())
@@ -70,19 +68,31 @@ class PostgresConnection:
         self._conn.close()
 
 
-def _postgres_connection():
+def _postgres_connection(url: str):
     try:
         import psycopg
     except ImportError as exc:
-        raise RuntimeError("DATABASE_URL está configurada pero falta psycopg") from exc
-    url = os.getenv("DATABASE_URL", "").strip()
+        raise RuntimeError("DATABASE_URL PostgreSQL está configurada pero falta psycopg") from exc
     return PostgresConnection(psycopg.connect(url, connect_timeout=10))
 
 
 def get_db():
-    """Use Supabase/PostgreSQL when DATABASE_URL exists; SQLite only for local fallback."""
-    if os.getenv("DATABASE_URL", "").strip():
-        return _postgres_connection()
+    """Select the configured backend: PostgreSQL/Supabase or local SQLite."""
+    url = os.getenv("DATABASE_URL", "").strip()
+    if url:
+        if url.startswith(("sqlite://", "sqlite3://")):
+            path = url.split("://", 1)[1] or ":memory:"
+            if path == "/:memory:":
+                path = ":memory:"
+            conn = sqlite3.connect(path, timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 30000")
+            return conn
+        if not url.startswith(("postgresql://", "postgres://")):
+            raise RuntimeError("DATABASE_URL debe usar sqlite://, postgresql:// o postgres://")
+        return _postgres_connection(url)
+
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

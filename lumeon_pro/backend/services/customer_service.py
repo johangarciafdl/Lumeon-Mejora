@@ -35,7 +35,8 @@ def search_customers(conn, term: str, limit: int = 20) -> list[dict]:
     like = f"%{term}%"
     rows = conn.execute(
         "SELECT id,nombre,documento,telefono,direccion,email,ciudad FROM clientes "
-        "WHERE nombre ILIKE ? OR documento ILIKE ? OR telefono ILIKE ? OR email ILIKE ? "
+        "WHERE LOWER(nombre) LIKE LOWER(?) OR LOWER(documento) LIKE LOWER(?) "
+        "OR LOWER(telefono) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?) "
         "ORDER BY nombre LIMIT ?",
         (like, like, like, like, limit),
     ).fetchall()

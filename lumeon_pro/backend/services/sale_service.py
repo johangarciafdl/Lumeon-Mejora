@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import sqlite3
 
 from services.inventory_service import reserve_items
 
@@ -10,7 +9,7 @@ class SaleError(ValueError):
     pass
 
 
-def create_sale(conn: sqlite3.Connection, *, data: dict, user_id: int) -> int:
+def create_sale(conn, *, data: dict, user_id: int) -> int:
     items = data.get("items") or []
     if not str(data.get("numero_factura", "")).strip():
         raise SaleError("El número de factura es obligatorio")
@@ -21,9 +20,12 @@ def create_sale(conn: sqlite3.Connection, *, data: dict, user_id: int) -> int:
     profit = 0.0
     normalized = []
     for item in items:
-        quantity = int(item.get("cantidad", 0))
-        sale_price = float(item.get("precio_venta", 0))
-        purchase_price = float(item.get("precio_compra", 0))
+        try:
+            quantity = int(item.get("cantidad", 0))
+            sale_price = float(item.get("precio_venta", 0))
+            purchase_price = float(item.get("precio_compra", 0))
+        except (TypeError, ValueError) as exc:
+            raise SaleError("Cantidad y precios deben ser válidos") from exc
         if quantity <= 0 or sale_price < 0 or purchase_price < 0:
             raise SaleError("Cantidad y precios deben ser válidos")
         subtotal += quantity * sale_price
@@ -32,11 +34,11 @@ def create_sale(conn: sqlite3.Connection, *, data: dict, user_id: int) -> int:
 
     reserve_items(conn, items)
 
-    conn.execute(
+    row = conn.execute(
         """INSERT INTO ventas
         (numero_factura,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
          fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
         (
             data["numero_factura"], data.get("cliente_id"), data.get("cliente_nombre", ""),
             data.get("cliente_email", ""), data.get("cliente_telefono", ""),
@@ -44,8 +46,8 @@ def create_sale(conn: sqlite3.Connection, *, data: dict, user_id: int) -> int:
             subtotal, subtotal, profit, data.get("estado", "Pendiente"),
             data.get("notas", ""), user_id,
         ),
-    )
-    sale_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+    ).fetchone()
+    sale_id = int(row["id"])
 
     for item, quantity, sale_price, purchase_price in normalized:
         conn.execute(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 
 
 def retry_allowed(delivery, max_retries: int = MAX_RETRIES) -> bool:
@@ -16,6 +16,6 @@ def retry_allowed(delivery, max_retries: int = MAX_RETRIES) -> bool:
 def retry_limit() -> int:
     raw = os.getenv("WHATSAPP_MAX_RETRIES", str(MAX_RETRIES))
     try:
-        return max(1, min(int(raw), 10))
+        return max(1, min(int(raw), 20))
     except ValueError:
         return MAX_RETRIES

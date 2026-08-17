@@ -7,6 +7,8 @@ import dotenv
 from flask import Flask, jsonify, request
 
 from api.assistant_api import assistant_api
+from api.delivery_api import delivery_api
+from api.invoice_api import invoice_api
 from core.config import load_settings
 from core.db import get_db, transaction
 from services.assistant_action_store import consume_pending, create_pending
@@ -25,6 +27,8 @@ app = Flask(__name__, static_folder="../frontend", static_url_path="")
 app.secret_key = settings.secret_key
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=settings.session_cookie_secure, SESSION_COOKIE_SAMESITE="Lax")
 app.register_blueprint(assistant_api)
+app.register_blueprint(invoice_api)
+app.register_blueprint(delivery_api)
 
 
 @app.after_request

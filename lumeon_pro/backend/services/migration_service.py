@@ -49,12 +49,16 @@ def apply_pending(conn) -> list[str]:
         if path.name in applied or path.name == "005_migration_runner.sql":
             continue
 
-        # The two message-delivery migrations describe the same feature. 004 is
-        # the canonical PostgreSQL version; 003 is retained as legacy history.
+        # 003_message_deliveries was the first PostgreSQL draft. Keep its history
+        # recorded but use 004 as the canonical PostgreSQL schema.
         if postgres and path.name == "003_message_deliveries.sql":
             conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (path.name,))
             conn.commit()
             completed.append(path.name)
+            continue
+
+        # The canonical delivery schemas are engine-specific.
+        if postgres and path.name == "006_message_deliveries_sqlite.sql":
             continue
         if not postgres and path.name in {"003_message_deliveries.sql", "004_message_deliveries.sql"}:
             continue

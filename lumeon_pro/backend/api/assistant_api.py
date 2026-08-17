@@ -25,11 +25,36 @@ def _load_session(conn, session_id: str) -> AssistantSession:
     session = AssistantSession()
     session.pending_intent = state["pending_intent"]
     session.pending_payload = state["pending_payload"]
+    draft = session.pending_payload.pop("__sale_draft", None)
+    if draft:
+        from services.assistant_sale_builder import SaleDraft
+        session.sale_draft = SaleDraft(
+            customer_id=draft.get("customer_id"),
+            customer_name=draft.get("customer_name", ""),
+            items=draft.get("items", []),
+        )
     return session
 
 
 def _save_session(conn, session_id: str, session: AssistantSession) -> None:
-    save_session(conn, session_id, session.pending_intent, session.pending_payload)
+    payload = dict(session.pending_payload)
+    if session.sale_draft is not None:
+        payload["__sale_draft"] = session.sale_draft.summary()
+    save_session(conn, session_id, session.pending_intent, payload)
+
+
+def _json_customer(body: dict):
+    customer = body.get("customer") or {}
+    if not customer.get("id"):
+        raise ValueError("Debes proporcionar customer.id")
+    return customer
+
+
+def _json_product(body: dict):
+    product = body.get("product") or {}
+    if not product.get("id"):
+        raise ValueError("Debes proporcionar product.id")
+    return product
 
 
 @assistant_api.post("/message")
@@ -64,6 +89,10 @@ def message():
                     elif intent == "create_product":
                         entity_id = create_product(tx, payload)
                         entity = "producto"
+                    elif intent == "create_sale":
+                        from services.sale_service import create_sale
+                        entity_id = create_sale(tx, data=payload, user_id=actor.id)
+                        entity = "venta"
                     else:
                         raise ValueError(f"Intent no soportado: {intent}")
                     record(tx, actor_id=actor.id, action=f"assistant.{intent}", entity=entity, entity_id=entity_id, details={"session_id": session_id})
@@ -79,6 +108,41 @@ def message():
             _save_session(conn, session_id, session)
             conn.commit()
             return jsonify({"ok": True, "status": "cancelled" if cancelled else "idle"})
+
+        if lowered.startswith("iniciar venta"):
+            require(actor, "create_sale")
+            try:
+                response = session.start_sale(_json_customer(body))
+            except ValueError as exc:
+                return jsonify({"ok": False, "status": "needs_input", "error": str(exc)}), 400
+            _save_session(conn, session_id, session)
+            conn.commit()
+            return jsonify({"ok": True, **response, "message": "Cliente seleccionado. Agrega productos y cantidades."})
+
+        if lowered.startswith("agregar producto"):
+            require(actor, "create_sale")
+            try:
+                product = _json_product(body)
+                quantity = int(body.get("quantity", 0))
+                response = session.add_sale_item(product, quantity)
+            except (ValueError, TypeError) as exc:
+                return jsonify({"ok": False, "status": "needs_input", "error": str(exc)}), 400
+            _save_session(conn, session_id, session)
+            conn.commit()
+            return jsonify({"ok": True, **response})
+
+        if lowered in {"resumen venta", "resumen de venta", "total venta"}:
+            return jsonify({"ok": True, **session.sale_summary()})
+
+        if lowered in {"confirmar venta", "crear venta"}:
+            require(actor, "create_sale")
+            try:
+                response = session.propose_sale()
+            except ValueError as exc:
+                return jsonify({"ok": False, "status": "needs_input", "error": str(exc)}), 400
+            _save_session(conn, session_id, session)
+            conn.commit()
+            return jsonify({"ok": True, **response})
 
         if lowered.startswith("buscar cliente"):
             require(actor, "search_customer")
@@ -98,7 +162,7 @@ def message():
             require(actor, "create_customer")
             payload = body.get("customer") or parse_create_customer(text)
             if not payload.get("nombre"):
-                return jsonify({"ok": True, "status": "needs_input", "message": "Indica al menos el nombre. Ejemplo: registrar cliente nombre: Carlos Pérez, telefono: 304..."})
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica al menos el nombre."})
             response = session.propose("create_customer", payload)
             _save_session(conn, session_id, session)
             conn.commit()
@@ -108,13 +172,13 @@ def message():
             require(actor, "create_product")
             payload = body.get("product") or parse_create_product(text)
             if not payload.get("nombre") or not payload.get("referencia"):
-                return jsonify({"ok": True, "status": "needs_input", "message": "Indica nombre y referencia. Ejemplo: registrar producto nombre: Café, referencia: CAF-001, stock: 10, precio_venta: 12000"})
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica nombre y referencia."})
             response = session.propose("create_product", payload)
             _save_session(conn, session_id, session)
             conn.commit()
             return jsonify({"ok": True, **response})
 
-        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock bajo o registrar clientes/productos."})
+        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock, registrar datos o construir una venta."})
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except Exception:

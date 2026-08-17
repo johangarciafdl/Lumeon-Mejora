@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import sqlite3
-
 
 class ProductError(ValueError):
     pass
 
 
-def search_products(conn: sqlite3.Connection, term: str, limit: int = 20) -> list[dict]:
+def search_products(conn, term: str, limit: int = 20) -> list[dict]:
     term = str(term or "").strip()
     if not term:
         return []
@@ -15,13 +13,13 @@ def search_products(conn: sqlite3.Connection, term: str, limit: int = 20) -> lis
     like = f"%{term}%"
     rows = conn.execute(
         "SELECT id,nombre,referencia,stock,stock_minimo,precio_venta FROM productos "
-        "WHERE nombre LIKE ? OR referencia LIKE ? ORDER BY nombre LIMIT ?",
+        "WHERE nombre ILIKE ? OR referencia ILIKE ? ORDER BY nombre LIMIT ?",
         (like, like, limit),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
-def create_product(conn: sqlite3.Connection, data: dict) -> int:
+def create_product(conn, data: dict) -> int:
     name = str(data.get("nombre", "")).strip()
     reference = str(data.get("referencia", "")).strip()
     if len(name) < 2:
@@ -38,14 +36,15 @@ def create_product(conn: sqlite3.Connection, data: dict) -> int:
         raise ProductError("Stock y precio no pueden ser negativos")
     if conn.execute("SELECT id FROM productos WHERE referencia=?", (reference,)).fetchone():
         raise ProductError("Ya existe un producto con esa referencia")
-    cursor = conn.execute(
-        "INSERT INTO productos(nombre,referencia,stock,stock_minimo,precio_venta) VALUES(?,?,?,?,?)",
+    row = conn.execute(
+        """INSERT INTO productos(nombre,referencia,stock,stock_minimo,precio_venta)
+           VALUES(?,?,?,?,?) RETURNING id""",
         (name, reference, stock, minimum, price),
-    )
-    return int(cursor.lastrowid)
+    ).fetchone()
+    return int(row["id"])
 
 
-def low_stock(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
+def low_stock(conn, limit: int = 100) -> list[dict]:
     rows = conn.execute(
         "SELECT id,nombre,referencia,stock,stock_minimo,precio_venta FROM productos "
         "WHERE stock <= stock_minimo ORDER BY stock ASC LIMIT ?",

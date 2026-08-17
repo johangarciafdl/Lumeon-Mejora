@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 
-from services.communication_service import DeliveryResult, get_delivery if False else None
-
 MAX_RETRIES = 3
 
 

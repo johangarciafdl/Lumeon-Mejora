@@ -31,12 +31,12 @@ class PostgresCursor:
         row = self._cursor.fetchone()
         if row is None:
             return None
-        return CompatRow(zip([d.name for d in self._cursor.description], row))
+        return CompatRow(zip([d.name if hasattr(d, "name") else d[0] for d in self._cursor.description], row))
 
     def fetchall(self):
         if self._cursor.description is None:
             return []
-        columns = [d.name for d in self._cursor.description]
+        columns = [d.name if hasattr(d, "name") else d[0] for d in self._cursor.description]
         return [CompatRow(zip(columns, row)) for row in self._cursor.fetchall()]
 
     @property
@@ -69,11 +69,14 @@ class PostgresConnection:
 
 
 def _postgres_connection(url: str):
+    # psycopg2 is used because it is the driver declared in requirements and is
+    # also suitable for PythonAnywhere. Keep the application-facing wrapper
+    # independent from the concrete PostgreSQL driver.
     try:
-        import psycopg
+        import psycopg2
     except ImportError as exc:
-        raise RuntimeError("DATABASE_URL PostgreSQL está configurada pero falta psycopg") from exc
-    return PostgresConnection(psycopg.connect(url, connect_timeout=10))
+        raise RuntimeError("DATABASE_URL PostgreSQL está configurada pero falta psycopg2-binary") from exc
+    return PostgresConnection(psycopg2.connect(url, connect_timeout=10))
 
 
 def get_db():

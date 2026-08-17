@@ -8,8 +8,9 @@ from services.assistant_session_service import get_session, save_session
 from services.audit_service import record
 from services.auth_service import AuthenticationError, current_actor
 from services.authorization_service import require
-from services.customer_service import search_customers, create_customer, CustomerError
-from services.product_service import search_products, low_stock
+from services.customer_service import CustomerError, create_customer, search_customers
+from services.product_service import ProductError, create_product, low_stock, search_products
+from services.assistant_parser import parse_create_customer, parse_create_product
 
 assistant_api = Blueprint("assistant_api", __name__, url_prefix="/api/v2/assistant")
 
@@ -21,14 +22,14 @@ def _session_id(actor_id: int) -> str:
 
 def _load_session(conn, session_id: str) -> AssistantSession:
     state = get_session(conn, session_id)
-    assistant_session = AssistantSession()
-    assistant_session.pending_intent = state["pending_intent"]
-    assistant_session.pending_payload = state["pending_payload"]
-    return assistant_session
+    session = AssistantSession()
+    session.pending_intent = state["pending_intent"]
+    session.pending_payload = state["pending_payload"]
+    return session
 
 
-def _save_session(conn, session_id: str, assistant_session: AssistantSession) -> None:
-    save_session(conn, session_id, assistant_session.pending_intent, assistant_session.pending_payload)
+def _save_session(conn, session_id: str, session: AssistantSession) -> None:
+    save_session(conn, session_id, session.pending_intent, session.pending_payload)
 
 
 @assistant_api.post("/message")
@@ -40,48 +41,45 @@ def message():
 
     body = request.get_json(silent=True) or {}
     text = str(body.get("text", "")).strip()
-    if not text:
-        return jsonify({"ok": False, "error": "Mensaje vacío"}), 400
+    if not text or len(text) > 500:
+        return jsonify({"ok": False, "error": "Mensaje vacío o demasiado largo"}), 400
 
     session_id = _session_id(actor.id)
     conn = get_db()
     try:
-        assistant_session = _load_session(conn, session_id)
+        session = _load_session(conn, session_id)
+        lowered = text.lower()
 
         if is_confirmation(text):
-            pending = assistant_session.confirm()
+            pending = session.confirm()
             if not pending:
                 return jsonify({"ok": True, "status": "idle", "message": "No hay ninguna operación pendiente."})
             intent, payload = pending
+            require(actor, intent)
             try:
-                require(actor, intent)
-            except PermissionError as exc:
-                _save_session(conn, session_id, assistant_session)
+                with transaction() as tx:
+                    if intent == "create_customer":
+                        entity_id = create_customer(tx, payload)
+                        entity = "cliente"
+                    elif intent == "create_product":
+                        entity_id = create_product(tx, payload)
+                        entity = "producto"
+                    else:
+                        raise ValueError(f"Intent no soportado: {intent}")
+                    record(tx, actor_id=actor.id, action=f"assistant.{intent}", entity=entity, entity_id=entity_id, details={"session_id": session_id})
+                    save_session(tx, session_id, None, {})
+                return jsonify({"ok": True, "status": "executed", "intent": intent, "entity": entity, "id": entity_id})
+            except (CustomerError, ProductError, ValueError) as exc:
+                _save_session(conn, session_id, session)
                 conn.commit()
-                return jsonify({"ok": False, "status": "forbidden", "error": str(exc)}), 403
-
-            if intent == "create_customer":
-                try:
-                    with transaction() as tx:
-                        customer_id = create_customer(tx, payload)
-                        record(tx, actor_id=actor.id, action="assistant.create_customer", entity="cliente", entity_id=customer_id, details={"session_id": session_id})
-                        save_session(tx, session_id, None, {})
-                    return jsonify({"ok": True, "status": "executed", "intent": intent, "id": customer_id})
-                except CustomerError as exc:
-                    _save_session(conn, session_id, assistant_session)
-                    conn.commit()
-                    return jsonify({"ok": False, "status": "error", "error": str(exc)}), 400
-            _save_session(conn, session_id, assistant_session)
-            conn.commit()
-            return jsonify({"ok": False, "status": "unsupported", "error": f"Intent aún no implementado: {intent}"}), 400
+                return jsonify({"ok": False, "status": "validation_error", "error": str(exc)}), 400
 
         if is_cancellation(text):
-            cancelled = assistant_session.cancel()
-            _save_session(conn, session_id, assistant_session)
+            cancelled = session.cancel()
+            _save_session(conn, session_id, session)
             conn.commit()
             return jsonify({"ok": True, "status": "cancelled" if cancelled else "idle"})
 
-        lowered = text.lower()
         if lowered.startswith("buscar cliente"):
             require(actor, "search_customer")
             term = text[len("buscar cliente"):].strip()
@@ -98,13 +96,25 @@ def message():
 
         if lowered.startswith("registrar cliente"):
             require(actor, "create_customer")
-            payload = body.get("customer") or {}
-            response = assistant_session.propose("create_customer", payload)
-            _save_session(conn, session_id, assistant_session)
+            payload = body.get("customer") or parse_create_customer(text)
+            if not payload.get("nombre"):
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica al menos el nombre. Ejemplo: registrar cliente nombre: Carlos Pérez, telefono: 304..."})
+            response = session.propose("create_customer", payload)
+            _save_session(conn, session_id, session)
             conn.commit()
             return jsonify({"ok": True, **response})
 
-        return jsonify({"ok": True, "status": "unknown", "message": "No reconocí la operación. Prueba: buscar cliente, buscar producto, stock bajo o registrar cliente."})
+        if lowered.startswith("registrar producto"):
+            require(actor, "create_product")
+            payload = body.get("product") or parse_create_product(text)
+            if not payload.get("nombre") or not payload.get("referencia"):
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica nombre y referencia. Ejemplo: registrar producto nombre: Café, referencia: CAF-001, stock: 10, precio_venta: 12000"})
+            response = session.propose("create_product", payload)
+            _save_session(conn, session_id, session)
+            conn.commit()
+            return jsonify({"ok": True, **response})
+
+        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock bajo o registrar clientes/productos."})
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except Exception:

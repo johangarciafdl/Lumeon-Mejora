@@ -1,24 +1,22 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request
 
 from core.db import get_db, transaction
 from services.assistant_workflow import AssistantSession, is_cancellation, is_confirmation
 from services.assistant_session_service import get_session, save_session
 from services.audit_service import record
-from services.authorization_service import Actor, require
+from services.auth_service import AuthenticationError, current_actor
+from services.authorization_service import require
 from services.customer_service import search_customers, create_customer, CustomerError
 from services.product_service import search_products, low_stock
 
 assistant_api = Blueprint("assistant_api", __name__, url_prefix="/api/v2/assistant")
 
 
-def _session_id() -> str:
-    return request.headers.get("X-Assistant-Session", "default")[:100]
-
-
-def _actor() -> Actor:
-    return Actor(id=session.get("user_id"), role=session.get("role", "vendedor"))
+def _session_id(actor_id: int) -> str:
+    supplied = request.headers.get("X-Assistant-Session", "default")[:100]
+    return f"user:{actor_id}:{supplied}"
 
 
 def _load_session(conn, session_id: str) -> AssistantSession:
@@ -35,12 +33,17 @@ def _save_session(conn, session_id: str, assistant_session: AssistantSession) ->
 
 @assistant_api.post("/message")
 def message():
+    try:
+        actor = current_actor()
+    except AuthenticationError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+
     body = request.get_json(silent=True) or {}
     text = str(body.get("text", "")).strip()
     if not text:
         return jsonify({"ok": False, "error": "Mensaje vacío"}), 400
 
-    session_id = _session_id()
+    session_id = _session_id(actor.id)
     conn = get_db()
     try:
         assistant_session = _load_session(conn, session_id)
@@ -51,7 +54,7 @@ def message():
                 return jsonify({"ok": True, "status": "idle", "message": "No hay ninguna operación pendiente."})
             intent, payload = pending
             try:
-                require(_actor(), intent)
+                require(actor, intent)
             except PermissionError as exc:
                 _save_session(conn, session_id, assistant_session)
                 conn.commit()
@@ -61,7 +64,7 @@ def message():
                 try:
                     with transaction() as tx:
                         customer_id = create_customer(tx, payload)
-                        record(tx, actor_id=session.get("user_id"), action="assistant.create_customer", entity="cliente", entity_id=customer_id, details={"session_id": session_id})
+                        record(tx, actor_id=actor.id, action="assistant.create_customer", entity="cliente", entity_id=customer_id, details={"session_id": session_id})
                         save_session(tx, session_id, None, {})
                     return jsonify({"ok": True, "status": "executed", "intent": intent, "id": customer_id})
                 except CustomerError as exc:
@@ -80,21 +83,21 @@ def message():
 
         lowered = text.lower()
         if lowered.startswith("buscar cliente"):
-            require(_actor(), "search_customer")
+            require(actor, "search_customer")
             term = text[len("buscar cliente"):].strip()
             return jsonify({"ok": True, "status": "ready", "intent": "search_customers", "results": search_customers(conn, term)})
 
         if lowered.startswith("buscar producto"):
-            require(_actor(), "search_product")
+            require(actor, "search_product")
             term = text[len("buscar producto"):].strip()
             return jsonify({"ok": True, "status": "ready", "intent": "search_products", "results": search_products(conn, term)})
 
         if "stock bajo" in lowered:
-            require(_actor(), "view_inventory")
+            require(actor, "view_inventory")
             return jsonify({"ok": True, "status": "ready", "intent": "low_stock", "results": low_stock(conn)})
 
         if lowered.startswith("registrar cliente"):
-            require(_actor(), "create_customer")
+            require(actor, "create_customer")
             payload = body.get("customer") or {}
             response = assistant_session.propose("create_customer", payload)
             _save_session(conn, session_id, assistant_session)

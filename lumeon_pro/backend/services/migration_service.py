@@ -49,6 +49,13 @@ def apply_pending(conn) -> list[str]:
         if path.name in applied or path.name == "005_migration_runner.sql":
             continue
 
+        # Explicit engine suffixes prevent a PostgreSQL migration from being
+        # accidentally applied to SQLite and vice versa.
+        if path.name.endswith("_sqlite.sql") and postgres:
+            continue
+        if not path.name.endswith("_sqlite.sql") and not postgres and path.name == "010_core_schema.sql":
+            continue
+
         # 003_message_deliveries was the first PostgreSQL draft. Keep its history
         # recorded but use 004 as the canonical PostgreSQL schema.
         if postgres and path.name == "003_message_deliveries.sql":

@@ -1,7 +1,8 @@
-flask
-flask-cors
-flask-login
-werkzeug
-reportlab
-python-dotenv
-gunicorn
+Flask>=3.0,<4
+flask-cors>=4.0,<7
+flask-login>=0.6,<1
+Werkzeug>=3.0,<4
+reportlab>=4.0,<5
+python-dotenv>=1.0,<2
+gunicorn>=22,<24
+pytest>=8,<9

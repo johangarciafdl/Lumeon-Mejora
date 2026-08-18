@@ -31,6 +31,23 @@ def _execute_script(conn, sql: str) -> None:
     conn._conn.cursor().execute(sql)
 
 
+def _sqlite_column_names(conn, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _apply_sqlite_011(conn) -> None:
+    """Apply sale idempotency without PostgreSQL-only ALTER TABLE syntax."""
+    columns = _sqlite_column_names(conn, "ventas")
+    if "idempotency_key" not in columns:
+        conn.execute("ALTER TABLE ventas ADD COLUMN idempotency_key TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_ventas_idempotency_key "
+        "ON ventas(idempotency_key) "
+        "WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''"
+    )
+
+
 def ensure_tracking_table(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations ("
@@ -65,12 +82,15 @@ def apply_pending(conn) -> list[str]:
         if not postgres and path.name in {"003_message_deliveries.sql", "004_message_deliveries.sql"}:
             continue
 
-        sql = path.read_text(encoding="utf-8")
-        if not postgres:
-            sql = _sqlite_sql(sql)
-
         try:
-            _execute_script(conn, sql)
+            if not postgres and path.name == "011_sale_idempotency.sql":
+                _apply_sqlite_011(conn)
+            else:
+                sql = path.read_text(encoding="utf-8")
+                if not postgres:
+                    sql = _sqlite_sql(sql)
+                _execute_script(conn, sql)
+
             conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (path.name,))
             conn.commit()
             completed.append(path.name)

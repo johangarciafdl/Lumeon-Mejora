@@ -18,6 +18,7 @@ class Settings:
     database_url: str
     callmebot_api_key: str
     callmebot_default_phone: str
+    whatsapp_provider: str
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -28,12 +29,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def load_settings() -> Settings:
-    secret_key = os.getenv("SECRET_KEY", "").strip()
     production = os.getenv("FLASK_ENV", "").strip().lower() == "production"
+
+    secret_key = os.getenv("SECRET_KEY", "").strip()
     if production and not secret_key:
         raise RuntimeError("SECRET_KEY es obligatorio en producción")
     if not secret_key:
         secret_key = secrets.token_hex(32)
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if production and not database_url:
+        raise RuntimeError("DATABASE_URL es obligatorio en producción (Supabase/PostgreSQL)")
 
     origins = tuple(
         item.strip()
@@ -43,6 +49,12 @@ def load_settings() -> Settings:
         ).split(",")
         if item.strip()
     )
+    if production and not origins:
+        raise RuntimeError("ALLOWED_ORIGINS debe contener al menos un origen en producción")
+
+    whatsapp_provider = os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower()
+    if whatsapp_provider not in {"callmebot", "none"}:
+        raise RuntimeError("WHATSAPP_PROVIDER no soportado")
 
     return Settings(
         secret_key=secret_key,
@@ -53,7 +65,8 @@ def load_settings() -> Settings:
         admin_password=os.getenv("ADMIN_PASSWORD", ""),
         admin_email=os.getenv("ADMIN_EMAIL", "admin@lumeon.local").strip(),
         session_cookie_secure=_env_bool("SESSION_COOKIE_SECURE", production),
-        database_url=os.getenv("DATABASE_URL", "").strip(),
+        database_url=database_url,
         callmebot_api_key=os.getenv("CALLMEBOT_API_KEY", "").strip(),
         callmebot_default_phone=os.getenv("CALLMEBOT_DEFAULT_PHONE", "").strip(),
+        whatsapp_provider=whatsapp_provider,
     )

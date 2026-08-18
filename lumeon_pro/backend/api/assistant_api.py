@@ -12,6 +12,7 @@ from services.customer_service import CustomerError, create_customer, search_cus
 from services.product_service import ProductError, create_product, low_stock, search_products
 from services.assistant_parser import parse_create_customer, parse_create_product
 from services.idempotency_service import claim, key_for
+from services.return_service import ReturnError, return_sale
 
 assistant_api = Blueprint("assistant_api", __name__, url_prefix="/api/v2/assistant")
 
@@ -106,16 +107,22 @@ def message():
                         entity_id = create_sale(tx, data=payload, user_id=actor.id); entity = "venta"
                     elif intent == "send_invoice":
                         entity_id = int(payload["sale_id"]); entity = "venta"
+                    elif intent == "refund_sale":
+                        entity_id = int(payload["sale_id"])
+                        result = return_sale(tx, sale_id=entity_id, user_id=int(actor.id), idempotency_key=str(payload["idempotency_key"]), reason=str(payload.get("motivo") or ""))
+                        entity = "venta"
                     else:
                         raise ValueError(f"Intent no soportado: {intent}")
                     record(tx, actor_id=actor.id, action=f"assistant.{intent}", entity=entity, entity_id=entity_id, details={"session_id": session_id, "idempotency_key": idem_key})
                     save_session(tx, session_id, None, {})
                 delivery = _deliver_sale_invoice(conn, entity_id) if intent in {"create_sale", "send_invoice"} else None
                 response = {"ok": True, "status": "executed", "intent": intent, "entity": entity, "id": entity_id}
+                if intent == "refund_sale":
+                    response["return"] = result
                 if delivery is not None:
                     response["invoice_delivery"] = delivery
                 return jsonify(response)
-            except (CustomerError, ProductError, ValueError) as exc:
+            except (CustomerError, ProductError, ReturnError, ValueError) as exc:
                 _save_session(conn, session_id, session)
                 conn.commit()
                 return jsonify({"ok": False, "status": "validation_error", "error": str(exc)}), 400
@@ -123,6 +130,22 @@ def message():
         if is_cancellation(text):
             cancelled = session.cancel(); _save_session(conn, session_id, session); conn.commit()
             return jsonify({"ok": True, "status": "cancelled" if cancelled else "idle"})
+
+        if lowered.startswith(("devolver venta", "devolución venta", "devolucion venta")):
+            require(actor, "refund_sale")
+            parts = text.split()
+            sale_id = int(parts[-1]) if parts and parts[-1].isdigit() else None
+            if not sale_id and body.get("sale_id"):
+                sale_id = int(body["sale_id"])
+            if not sale_id:
+                return jsonify({"ok": True, "status": "needs_input", "message": "Indica el ID de la venta. Ejemplo: devolver venta 123"})
+            exists = conn.execute("SELECT id, numero_factura, cliente_nombre, total, estado FROM ventas WHERE id=?", (sale_id,)).fetchone()
+            if not exists:
+                return jsonify({"ok": False, "status": "validation_error", "error": "Venta no encontrada"}), 404
+            idem_key = str(body.get("idempotency_key") or request.headers.get("Idempotency-Key") or f"assistant-refund:{actor.id}:{session_id}:{sale_id}").strip()
+            response = session.propose_refund(sale_id=sale_id, idempotency_key=idem_key, reason=str(body.get("motivo") or ""))
+            _save_session(conn, session_id, session); conn.commit()
+            return jsonify({"ok": True, **response, "message": f"Voy a devolver la venta {sale_id} (factura {exists['numero_factura']}). Se repondrá el inventario. ¿Confirmas?"})
 
         if lowered.startswith(("enviar factura", "mandar factura")):
             require(actor, "send_invoice")
@@ -188,7 +211,7 @@ def message():
             response = session.propose("create_product", payload); _save_session(conn, session_id, session); conn.commit()
             return jsonify({"ok": True, **response})
 
-        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock, registrar datos, construir ventas y enviar facturas por WhatsApp."})
+        return jsonify({"ok": True, "status": "unknown", "message": "Puedo buscar clientes/productos, consultar stock, registrar datos, construir ventas, devolver ventas y enviar facturas por WhatsApp."})
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except Exception:

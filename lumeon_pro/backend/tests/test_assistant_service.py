@@ -7,9 +7,9 @@ def db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript("""
-    CREATE TABLE clientes (id INTEGER PRIMARY KEY, nombre TEXT, documento TEXT, telefono TEXT, email TEXT, ciudad TEXT);
+    CREATE TABLE clientes (id INTEGER PRIMARY KEY, nombre TEXT, documento TEXT, telefono TEXT, direccion TEXT, email TEXT, ciudad TEXT);
     CREATE TABLE productos (id INTEGER PRIMARY KEY, nombre TEXT, referencia TEXT, stock INTEGER, stock_minimo INTEGER, precio_venta REAL);
-    INSERT INTO clientes VALUES (1,'Juan Perez','123','3045201946','juan@example.com','Medellín');
+    INSERT INTO clientes VALUES (1,'Juan Perez','123','3045201946','Calle 1','juan@example.com','Medellín');
     INSERT INTO productos VALUES (1,'Cafe Lumeon','CAF-01',4,5,10000);
     """)
     return conn

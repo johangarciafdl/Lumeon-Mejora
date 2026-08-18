@@ -11,6 +11,7 @@ sys.path.insert(0, str(BACKEND))
 os.environ.setdefault("SECRET_KEY", "test-secret")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("FLASK_ENV", "testing")
+os.environ.pop("LEGACY_SESSION_BRIDGE_TOKEN", None)
 
 from app_v2 import app  # noqa: E402
 from api.auth_api import _is_password_match  # noqa: E402
@@ -55,6 +56,11 @@ class SmokeTests(unittest.TestCase):
         self.assertFalse(_is_password_match(hashed, "wrong"))
         self.assertTrue(_is_password_match(password, password))
         self.assertFalse(_is_password_match(password, "wrong"))
+
+    def test_legacy_session_bridge_is_disabled_without_token(self):
+        client = app.test_client()
+        response = client.post("/api/v2/auth/session", json={"user_id": 1, "role": "admin"})
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

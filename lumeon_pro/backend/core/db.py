@@ -12,7 +12,6 @@ _QMARK = re.compile(r"\?")
 
 
 class CompatRow(dict):
-    """Mapping row compatible with legacy numeric indexing."""
     def __getitem__(self, key: Any):
         if isinstance(key, int):
             return tuple(self.values())[key]
@@ -42,10 +41,6 @@ class PostgresCursor:
     @property
     def rowcount(self):
         return self._cursor.rowcount
-
-    @property
-    def lastrowid(self):
-        raise RuntimeError("PostgreSQL no usa lastrowid; usa INSERT ... RETURNING id")
 
 
 class PostgresConnection:
@@ -77,13 +72,12 @@ def _postgres_connection(url: str):
     kwargs = {"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10"))}
     if os.getenv("DB_SSLMODE"):
         kwargs["sslmode"] = os.getenv("DB_SSLMODE").strip()
-    application_name = os.getenv("DB_APPLICATION_NAME", "lumeon-pro")
-    kwargs["application_name"] = application_name
+    kwargs["application_name"] = os.getenv("DB_APPLICATION_NAME", "lumeon-pro")
     return PostgresConnection(psycopg2.connect(url, **kwargs))
 
 
 def get_db():
-    """Select PostgreSQL/Supabase when DATABASE_URL is configured; otherwise local SQLite."""
+    """Use PostgreSQL/Supabase when DATABASE_URL is configured; keep SQLite as local fallback."""
     url = os.getenv("DATABASE_URL", "").strip()
     if url:
         if url.startswith(("sqlite://", "sqlite3://")):

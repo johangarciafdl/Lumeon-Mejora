@@ -10,6 +10,18 @@ def _versions():
     return sorted(MIGRATIONS_DIR.glob("*.sql"), key=lambda p: p.name)
 
 
+def _versions_for_connection(postgres: bool):
+    paths = _versions()
+    if postgres:
+        return paths
+    # The SQLite core schema is numbered 010 for historical reasons, but
+    # migrations 007/008 contain indexes/tables that depend on it. Build the
+    # core tables first, then apply the remaining SQLite-compatible migrations.
+    core = MIGRATIONS_DIR / "010_core_schema_sqlite.sql"
+    paths = [p for p in paths if p.name != core.name]
+    return [core, *paths]
+
+
 def _is_postgres(conn) -> bool:
     return conn.__class__.__name__ == "PostgresConnection"
 
@@ -62,7 +74,7 @@ def apply_pending(conn) -> list[str]:
     postgres = _is_postgres(conn)
     completed: list[str] = []
 
-    for path in _versions():
+    for path in _versions_for_connection(postgres):
         if path.name in applied or path.name == "005_migration_runner.sql":
             continue
 

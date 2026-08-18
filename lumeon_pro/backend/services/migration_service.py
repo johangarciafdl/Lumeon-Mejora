@@ -28,7 +28,7 @@ def _execute_script(conn, sql: str) -> None:
     if hasattr(conn, "executescript"):
         conn.executescript(sql)
         return
-    conn._conn.execute(sql)
+    conn._conn.cursor().execute(sql)
 
 
 def ensure_tracking_table(conn) -> None:
@@ -49,22 +49,17 @@ def apply_pending(conn) -> list[str]:
         if path.name in applied or path.name == "005_migration_runner.sql":
             continue
 
-        # Explicit engine suffixes prevent a PostgreSQL migration from being
-        # accidentally applied to SQLite and vice versa.
         if path.name.endswith("_sqlite.sql") and postgres:
             continue
         if not path.name.endswith("_sqlite.sql") and not postgres and path.name == "010_core_schema.sql":
             continue
 
-        # 003_message_deliveries was the first PostgreSQL draft. Keep its history
-        # recorded but use 004 as the canonical PostgreSQL schema.
         if postgres and path.name == "003_message_deliveries.sql":
             conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (path.name,))
             conn.commit()
             completed.append(path.name)
             continue
 
-        # The canonical delivery schemas are engine-specific.
         if postgres and path.name == "006_message_deliveries_sqlite.sql":
             continue
         if not postgres and path.name in {"003_message_deliveries.sql", "004_message_deliveries.sql"}:
@@ -73,9 +68,14 @@ def apply_pending(conn) -> list[str]:
         sql = path.read_text(encoding="utf-8")
         if not postgres:
             sql = _sqlite_sql(sql)
-        _execute_script(conn, sql)
-        conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (path.name,))
-        conn.commit()
-        completed.append(path.name)
+
+        try:
+            _execute_script(conn, sql)
+            conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (path.name,))
+            conn.commit()
+            completed.append(path.name)
+        except Exception:
+            conn.rollback()
+            raise
 
     return completed

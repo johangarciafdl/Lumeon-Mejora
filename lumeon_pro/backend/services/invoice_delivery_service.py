@@ -5,6 +5,8 @@ from services.invoice_service import build_invoice
 from services.whatsapp_provider import WhatsAppError, get_whatsapp_provider
 from services.whatsapp_service import build_invoice_message
 
+BLOCKED_STATES = {"devuelta", "devuelto", "anulada", "anulado", "cancelada", "cancelado"}
+
 
 def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: str,
                     phone: str, items: list[dict], total: float,
@@ -12,7 +14,9 @@ def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: s
     sale = conn.execute("SELECT estado FROM ventas WHERE id=? LIMIT 1", (sale_id,)).fetchone()
     if not sale:
         return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="NOT_FOUND")}
-    if str(sale["estado"] or "").strip().lower() in {"devuelta", "anulada", "cancelada"}:
+
+    state = str(sale["estado"] or "").strip().lower()
+    if state in BLOCKED_STATES:
         return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="BLOCKED", error="La venta no admite entrega")}
 
     invoice = build_invoice(invoice_number=invoice_number, customer_name=customer_name, items=items, total=total)
@@ -21,9 +25,10 @@ def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: s
     if not phone:
         return result
 
-    allowed = can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone)
-    if not allowed:
-        status = "RETRY_NOT_ALLOWED" if force_retry else "ALREADY_SENT"
+    # force_retry means the caller explicitly asked for another attempt; it does
+    # not bypass the safety cap or resend a successful delivery.
+    if not can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone):
+        status = "ALREADY_SENT" if not force_retry else "RETRY_NOT_ALLOWED"
         return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status=status)}
 
     try:

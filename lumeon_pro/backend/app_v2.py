@@ -15,6 +15,7 @@ from services.migration_service import apply_pending
 from services.product_service import ProductError, create_product
 from services.customer_service import CustomerError, create_customer
 from services.sale_service import SaleError, create_sale
+from services.return_service import ReturnError, return_sale
 
 dotenv.load_dotenv()
 settings = load_settings()
@@ -87,7 +88,7 @@ def create_venta_v2():
         data = request.get_json(silent=True) or {}
         conn = get_db()
         try:
-            sale_id = create_sale(conn, data=data, user_id=actor.user_id)
+            sale_id = create_sale(conn, data=data, user_id=actor.id)
             conn.commit()
             return jsonify({"ok": True, "venta_id": sale_id}), 201
         finally:
@@ -95,6 +96,38 @@ def create_venta_v2():
     except (AuthenticationError, PermissionError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
     except SaleError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post("/api/v2/ventas/<int:sale_id>/devolucion")
+def return_venta_v2(sale_id: int):
+    try:
+        actor = current_actor()
+        require(actor, "refund_sale")
+        data = request.get_json(silent=True) or {}
+        idempotency_key = str(data.get("idempotency_key") or request.headers.get("Idempotency-Key") or "").strip()
+        if not idempotency_key:
+            return jsonify({"ok": False, "error": "Idempotency-Key es obligatorio"}), 400
+
+        conn = get_db()
+        try:
+            result = return_sale(
+                conn,
+                sale_id=sale_id,
+                user_id=int(actor.id),
+                idempotency_key=idempotency_key,
+                reason=str(data.get("motivo") or ""),
+            )
+            conn.commit()
+            return jsonify({"ok": True, **result}), 200
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+    except ReturnError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 

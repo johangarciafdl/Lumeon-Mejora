@@ -69,18 +69,21 @@ class PostgresConnection:
 
 
 def _postgres_connection(url: str):
-    # psycopg2 is used because it is the driver declared in requirements and is
-    # also suitable for PythonAnywhere. Keep the application-facing wrapper
-    # independent from the concrete PostgreSQL driver.
     try:
         import psycopg2
     except ImportError as exc:
         raise RuntimeError("DATABASE_URL PostgreSQL está configurada pero falta psycopg2-binary") from exc
-    return PostgresConnection(psycopg2.connect(url, connect_timeout=10))
+
+    kwargs = {"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10"))}
+    if os.getenv("DB_SSLMODE"):
+        kwargs["sslmode"] = os.getenv("DB_SSLMODE").strip()
+    application_name = os.getenv("DB_APPLICATION_NAME", "lumeon-pro")
+    kwargs["application_name"] = application_name
+    return PostgresConnection(psycopg2.connect(url, **kwargs))
 
 
 def get_db():
-    """Select the configured backend: PostgreSQL/Supabase or local SQLite."""
+    """Select PostgreSQL/Supabase when DATABASE_URL is configured; otherwise local SQLite."""
     url = os.getenv("DATABASE_URL", "").strip()
     if url:
         if url.startswith(("sqlite://", "sqlite3://")):

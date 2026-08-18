@@ -76,6 +76,17 @@ def _postgres_connection(url: str):
     return PostgresConnection(psycopg2.connect(url, **kwargs))
 
 
+def _sqlite_connection(path: str | Path):
+    """Open SQLite and create its parent directory when using a file database."""
+    if str(path) != ":memory:":
+        Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
 def get_db():
     """Use PostgreSQL/Supabase when DATABASE_URL is configured; keep SQLite as local fallback."""
     url = os.getenv("DATABASE_URL", "").strip()
@@ -84,20 +95,12 @@ def get_db():
             path = url.split("://", 1)[1] or ":memory:"
             if path == "/:memory:":
                 path = ":memory:"
-            conn = sqlite3.connect(path, timeout=30)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA busy_timeout = 30000")
-            return conn
+            return _sqlite_connection(path)
         if not url.startswith(("postgresql://", "postgres://")):
             raise RuntimeError("DATABASE_URL debe usar sqlite://, postgresql:// o postgres://")
         return _postgres_connection(url)
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    return conn
+    return _sqlite_connection(DB_PATH)
 
 
 @contextmanager

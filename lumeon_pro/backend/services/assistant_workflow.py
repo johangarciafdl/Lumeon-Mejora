@@ -11,6 +11,7 @@ WRITE_INTENTS = {
     "create_product",
     "create_sale",
     "send_invoice",
+    "refund_sale",
 }
 
 
@@ -37,10 +38,7 @@ class AssistantSession:
         customer_id = customer.get("id")
         if not customer_id:
             raise ValueError("Selecciona un cliente válido para iniciar la venta")
-        self.sale_draft = SaleDraft(
-            customer_id=int(customer_id),
-            customer_name=str(customer.get("nombre", "")),
-        )
+        self.sale_draft = SaleDraft(customer_id=int(customer_id), customer_name=str(customer.get("nombre", "")))
         return self.sale_summary()
 
     def add_sale_item(self, product: dict[str, Any], quantity: int) -> dict[str, Any]:
@@ -59,6 +57,17 @@ class AssistantSession:
             raise ValueError("No hay una venta en construcción")
         self.sale_draft.validate()
         return self.propose("create_sale", self.sale_draft.summary())
+
+    def propose_refund(self, *, sale_id: int, idempotency_key: str, reason: str = "") -> dict[str, Any]:
+        if int(sale_id) <= 0:
+            raise ValueError("Selecciona una venta válida para devolver")
+        if not str(idempotency_key or "").strip():
+            raise ValueError("La devolución requiere una clave de idempotencia")
+        return self.propose("refund_sale", {
+            "sale_id": int(sale_id),
+            "idempotency_key": str(idempotency_key).strip(),
+            "motivo": str(reason or "").strip()[:500],
+        })
 
     def confirm(self) -> tuple[str, dict[str, Any]] | None:
         if not self.pending_intent:

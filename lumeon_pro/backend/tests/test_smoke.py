@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
+from werkzeug.security import generate_password_hash
+
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
@@ -11,6 +13,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("FLASK_ENV", "testing")
 
 from app_v2 import app  # noqa: E402
+from api.auth_api import _is_password_match  # noqa: E402
 from services.assistant_workflow import AssistantSession, is_cancellation, is_confirmation  # noqa: E402
 from wsgi import application  # noqa: E402
 
@@ -44,6 +47,14 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(is_confirmation("CONFIRMO"))
         self.assertTrue(is_cancellation("cancelar"))
         self.assertTrue(is_cancellation("NO"))
+
+    def test_password_verification_supports_hashes_and_legacy_plaintext(self):
+        password = "test-password"
+        hashed = generate_password_hash(password)
+        self.assertTrue(_is_password_match(hashed, password))
+        self.assertFalse(_is_password_match(hashed, "wrong"))
+        self.assertTrue(_is_password_match(password, password))
+        self.assertFalse(_is_password_match(password, "wrong"))
 
 
 if __name__ == "__main__":

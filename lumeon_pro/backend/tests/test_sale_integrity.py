@@ -48,13 +48,13 @@ def db():
         subtotal REAL,
         ganancia REAL
     );
-    CREATE TABLE auditoria (
+    CREATE TABLE audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        actor_id INTEGER,
+        user_id INTEGER,
         action TEXT,
-        entity TEXT,
-        entity_id INTEGER,
-        details TEXT,
+        entity_type TEXT,
+        entity_id TEXT,
+        metadata TEXT,
         created_at TEXT
     );
     """)

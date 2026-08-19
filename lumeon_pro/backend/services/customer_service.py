@@ -8,6 +8,7 @@ class CustomerError(ValueError):
 
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+PLACEHOLDER_DOCUMENTS = {"0", "00", "000", "0000", "00000", "000000", "0000000"}
 
 
 def normalize_customer(data: dict) -> dict:
@@ -17,9 +18,12 @@ def normalize_customer(data: dict) -> dict:
     email = str(data.get("email", "")).strip().lower()
     if email and not EMAIL_RE.fullmatch(email):
         raise CustomerError("El email del cliente no es válido")
+    document = str(data.get("documento", "")).strip()[:50]
+    if document in PLACEHOLDER_DOCUMENTS:
+        document = ""
     return {
         "nombre": name,
-        "documento": str(data.get("documento", "")).strip()[:50],
+        "documento": document or None,
         "telefono": str(data.get("telefono", "")).strip()[:30],
         "direccion": str(data.get("direccion", "")).strip()[:180],
         "email": email,
@@ -29,17 +33,21 @@ def normalize_customer(data: dict) -> dict:
 
 def search_customers(conn, term: str, limit: int = 20) -> list[dict]:
     term = str(term or "").strip()
-    if not term:
-        return []
     limit = max(1, min(int(limit), 100))
-    like = f"%{term}%"
-    rows = conn.execute(
-        "SELECT id,nombre,documento,telefono,direccion,email,ciudad FROM clientes "
-        "WHERE LOWER(nombre) LIKE LOWER(?) OR LOWER(documento) LIKE LOWER(?) "
-        "OR LOWER(telefono) LIKE LOWER(?) OR LOWER(email) LIKE LOWER(?) "
-        "ORDER BY nombre LIMIT ?",
-        (like, like, like, like, limit),
-    ).fetchall()
+    if not term:
+        rows = conn.execute(
+            "SELECT id,nombre,documento,telefono,direccion,email,ciudad FROM clientes ORDER BY nombre LIMIT ?",
+            (limit,),
+        ).fetchall()
+    else:
+        like = f"%{term}%"
+        rows = conn.execute(
+            "SELECT id,nombre,documento,telefono,direccion,email,ciudad FROM clientes "
+            "WHERE LOWER(nombre) LIKE LOWER(?) OR LOWER(COALESCE(documento,'')) LIKE LOWER(?) "
+            "OR LOWER(COALESCE(telefono,'')) LIKE LOWER(?) OR LOWER(COALESCE(email,'')) LIKE LOWER(?) "
+            "ORDER BY nombre LIMIT ?",
+            (like, like, like, like, limit),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 

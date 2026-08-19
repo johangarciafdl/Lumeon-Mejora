@@ -12,6 +12,8 @@ from services.product_service import create_product, search_products, low_stock
 from services.return_service import return_sale
 from services.sale_service import SaleError, create_sale
 from services.invoice_delivery_service import deliver_invoice
+from services.groq_planner import plan_with_groq
+from services.gemini_planner import plan_with_gemini
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
@@ -176,11 +178,32 @@ def plan(text: str, db_context: dict) -> dict:
     if deterministic:
         return deterministic
 
+    # Groq interprets the user's natural language. Do NOT send the full
+    # database context here: the free plan has an 8K TPM limit and the
+    # database context can exceed it. Lumeon queries SQLite only after the
+    # model returns a structured action.
+    groq_context = {
+        "role": "lumeon_operation_planner",
+        "allowed_actions": [
+            "search_customer", "search_product", "low_stock", "create_customer",
+            "create_product", "update_product_price", "delete_product", "create_sale",
+            "send_invoice", "refund_sale", "unknown",
+        ],
+    }
+
+    groq = plan_with_groq(text, groq_context)
+    if groq and str(groq.get("action") or "unknown") != "unknown":
+        return groq
+    if groq and str(groq.get("action") or "unknown") == "unknown":
+        message = str(groq.get("message") or "").strip()
+        if message:
+            return groq
+
     key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not key:
         return {
             "action": "unknown",
-            "message": "No necesito una suscripción para operar. Puedo ejecutar comandos Lumeon directos como buscar, stock bajo, cambiar precios, registrar ventas, enviar facturas y devolver ventas.",
+            "message": "Puedo ayudarte con clientes, productos, inventario, ventas, facturas y devoluciones. Dime qué necesitas hacer.",
         }
 
     prompt = (
@@ -191,10 +214,10 @@ def plan(text: str, db_context: dict) -> dict:
         "customer_name/customer_id, phone y email cuando existan. Para update_product_price usa "
         "product_ref y price. Para delete_product usa product_ref. Para send_invoice/refund_sale usa "
         "sale_id o invoice_number. Si faltan datos, devuelve unknown con message.\n\n"
-        + json.dumps({"request": text, "context": db_context}, ensure_ascii=False)
+        + json.dumps({"request": text}, ensure_ascii=False)
     )
     payload = {
-        "model": os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL),
+        "model": os.getenv("OPENROUTER_MODEL", "openrouter/free"),
         "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": text},
@@ -225,17 +248,43 @@ def plan(text: str, db_context: dict) -> dict:
     except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
         return {
             "action": "unknown",
-            "message": "La IA externa gratuita no respondió o alcanzó su límite. Los comandos Lumeon locales siguen funcionando.",
+            "message": "La IA externa gratuita no respondió. Los comandos Lumeon locales siguen funcionando.",
             "detail": str(exc)[:160],
         }
 
-
 def _product(conn, ref):
-    ref = str(ref or "").strip()
-    return conn.execute(
+    """Resolve a product by reference, numeric id, exact name, or name fragment.
+
+    The assistant may identify a product using natural language. Never trust
+    model-provided price/stock; only use the returned database row.
+    """
+    ref = " ".join(str(ref or "").strip().split())
+    if not ref:
+        return None
+
+    row = conn.execute(
         "SELECT * FROM productos WHERE referencia=? OR CAST(id AS TEXT)=? LIMIT 1",
         (ref, ref),
-    ).fetchone() if ref else None
+    ).fetchone()
+    if row:
+        return row
+
+    row = conn.execute(
+        "SELECT * FROM productos WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) LIMIT 1",
+        (ref,),
+    ).fetchone()
+    if row:
+        return row
+
+    # Natural-language names can include extra words. Keep resolution
+    # deterministic: prefer a unique partial-name match and reject ambiguity.
+    rows = conn.execute(
+        "SELECT * FROM productos WHERE LOWER(nombre) LIKE LOWER(?) ORDER BY id",
+        (f"%{ref}%",),
+    ).fetchall()
+    if len(rows) == 1:
+        return rows[0]
+    return None
 
 
 def _sale(conn, sale_id=None, invoice_number=None):

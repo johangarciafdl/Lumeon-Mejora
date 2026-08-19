@@ -63,3 +63,9 @@ yarn-error.log
 *.tmp
 *.temp
 .qodo/
+
+# Produccion local - nunca versionar datos
+/data/
+*.db
+*.db-wal
+*.db-shm

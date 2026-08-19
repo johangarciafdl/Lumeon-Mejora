@@ -9,8 +9,26 @@ class Actor:
     role: str
 
 
-READ_ACTIONS = {"search_customer", "search_product", "view_inventory", "view_sales"}
-WRITE_ACTIONS = {"create_customer", "create_product", "create_sale", "send_invoice"}
+# Keep both the original semantic names and the route-level names used by
+# the V2 blueprints. This avoids denying valid authenticated users simply
+# because one layer calls the permission "read_product" while another uses
+# "search_product".
+READ_ACTIONS = {
+    "search_customer",
+    "search_product",
+    "view_inventory",
+    "view_sales",
+    "read_customer",
+    "read_product",
+    "read_sale",
+}
+WRITE_ACTIONS = {
+    "create_customer",
+    "create_product",
+    "create_sale",
+    "send_invoice",
+    "update_inventory",
+}
 ADMIN_ACTIONS = {"delete_customer", "delete_product", "refund_sale", "manage_users"}
 
 

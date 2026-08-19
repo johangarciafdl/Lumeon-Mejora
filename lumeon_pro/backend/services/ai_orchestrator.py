@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from services.audit_service import record as audit
 from services.customer_service import create_customer, search_customers
-from services.product_service import create_product, search_products
+from services.product_service import create_product, search_products, low_stock
 from services.return_service import return_sale
 from services.sale_service import SaleError, create_sale
 from services.invoice_delivery_service import deliver_invoice
@@ -18,11 +19,137 @@ CONFIRM_ACTIONS = {"update_product_price", "delete_product", "refund_sale"}
 
 
 def _local_plan(text: str) -> dict | None:
-    t = text.lower().strip()
-    if t in {"sí", "si", "confirmar", "confirmado", "hazlo"}:
+    t = " ".join(str(text or "").strip().split())
+    low = t.lower()
+
+    if low in {"sí", "si", "confirmar", "confirmado", "hazlo"}:
         return {"action": "confirm_pending"}
-    if t in {"no", "cancelar", "cancela", "cancelado"}:
+    if low in {"no", "cancelar", "cancela", "cancelado"}:
         return {"action": "cancel_pending"}
+    return None
+
+
+def _local_command_plan(text: str) -> dict | None:
+    t = " ".join(str(text or "").strip().split())
+    low = t.lower()
+
+    if low in {"stock bajo", "inventario bajo", "productos con stock bajo", "que productos tienen stock bajo"}:
+        return {"action": "low_stock"}
+
+    for prefix in ("buscar cliente ", "busca cliente ", "cliente "):
+        if low.startswith(prefix):
+            query = t[len(prefix):].strip()
+            if query:
+                return {"action": "search_customer", "query": query}
+
+    for prefix in ("buscar producto ", "busca producto ", "producto "):
+        if low.startswith(prefix):
+            query = t[len(prefix):].strip()
+            if query:
+                return {"action": "search_product", "query": query}
+
+    price_match = re.search(
+        r"(?:cambia|cambiar|actualiza|actualizar)\s+(?:el\s+)?precio(?:\s+del\s+producto)?\s+([\w.-]+)\s+(?:a|por)\s*\$?([0-9]+(?:[.,][0-9]+)?)",
+        low,
+    )
+    if price_match:
+        raw_price = price_match.group(2).replace(".", "").replace(",", ".")
+        price = float(raw_price)
+        ref = price_match.group(1)
+        return {
+            "action": "update_product_price",
+            "product_ref": ref,
+            "price": price,
+            "confirmation_message": f"Voy a cambiar el precio del producto {ref} a ${price:,.0f}. ¿Confirmas?",
+        }
+
+    delete_match = re.search(
+        r"(?:elimina|eliminar|borra|borrar)\s+(?:el\s+)?producto\s+([\w.-]+)",
+        low,
+    )
+    if delete_match:
+        ref = delete_match.group(1)
+        return {
+            "action": "delete_product",
+            "product_ref": ref,
+            "confirmation_message": f"Voy a eliminar el producto {ref}. ¿Confirmas?",
+        }
+
+    invoice_match = re.search(
+        r"(?:envia|enviar|manda|mandar)\s+(?:la\s+)?factura\s+([\w.-]+)",
+        low,
+    )
+    if invoice_match:
+        ref = invoice_match.group(1)
+        if ref.isdigit():
+            return {"action": "send_invoice", "sale_id": int(ref)}
+        return {"action": "send_invoice", "invoice_number": ref}
+
+    refund_match = re.search(
+        r"(?:devuelve|devolver|anula|anular)\s+(?:la\s+)?venta\s+([0-9]+)",
+        low,
+    )
+    if refund_match:
+        sale_id = int(refund_match.group(1))
+        return {
+            "action": "refund_sale",
+            "sale_id": sale_id,
+            "confirmation_message": f"Voy a devolver la venta {sale_id} y reponer inventario. ¿Confirmas?",
+        }
+
+    if low.startswith(("venta ", "registrar venta", "registra venta", "crear venta", "crea venta")):
+        customer_name = ""
+        customer_id = None
+        phone = ""
+        email = ""
+
+        customer_id_match = re.search(r"(?:cliente|comprador)\s+(?:id\s*)?(\d+)\b", t, re.I)
+        if customer_id_match:
+            customer_id = int(customer_id_match.group(1))
+
+        name_match = re.search(
+            r"(?:para|cliente|comprador)\s+(.+?)(?=\s+(?:telefono|tel|correo|email|productos?|items?)\b|$)",
+            t,
+            re.I,
+        )
+        if name_match and not customer_id:
+            candidate = name_match.group(1).strip()
+            if not candidate.lower().startswith("id "):
+                customer_name = candidate
+
+        phone_match = re.search(r"(?:telefono|tel|whatsapp)\s*[:=]?\s*([+0-9][0-9\s-]{8,16})", t, re.I)
+        if phone_match:
+            phone = phone_match.group(1).strip()
+
+        email_match = re.search(r"(?:correo|email)\s*[:=]?\s*([^\s,;]+@[^\s,;]+)", t, re.I)
+        if email_match:
+            email = email_match.group(1).strip()
+
+        items_match = re.search(r"(?:productos?|items?)\s*[:=]?\s*(.+)$", t, re.I)
+        items = []
+        if items_match:
+            raw_items = items_match.group(1)
+            for token in re.split(r"[,;]+\s*", raw_items):
+                token = token.strip()
+                if not token:
+                    continue
+                m = (
+                    re.fullmatch(r"(?:id\s*)?([\w.-]+)\s*(?:x|\*)\s*(\d+)", token, re.I)
+                    or re.fullmatch(r"(?:id\s*)?([\w.-]+)\s*:\s*(\d+)", token, re.I)
+                )
+                if m:
+                    items.append({"referencia": m.group(1), "cantidad": int(m.group(2))})
+
+        if items:
+            return {
+                "action": "create_sale",
+                "customer_id": customer_id,
+                "customer_name": customer_name,
+                "phone": phone,
+                "email": email,
+                "items": items,
+            }
+
     return None
 
 
@@ -44,15 +171,23 @@ def plan(text: str, db_context: dict) -> dict:
     local = _local_plan(text)
     if local:
         return local
+
+    deterministic = _local_command_plan(text)
+    if deterministic:
+        return deterministic
+
     key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not key:
-        return {"action": "unknown", "message": "La IA gratuita no está configurada. Puedo usar los comandos directos del asistente."}
+        return {
+            "action": "unknown",
+            "message": "No necesito una suscripción para operar. Puedo ejecutar comandos Lumeon directos como buscar, stock bajo, cambiar precios, registrar ventas, enviar facturas y devolver ventas.",
+        }
 
     prompt = (
         "Eres el planificador de LUMEON PRO. Responde SOLO JSON válido. "
         "Nunca escribas SQL ni inventes datos. Acciones: search_customer, search_product, "
-        "create_customer, create_product, update_product_price, delete_product, create_sale, "
-        "send_invoice, refund_sale, unknown. Para create_sale usa items=[{referencia,cantidad}], "
+        "low_stock, create_customer, create_product, update_product_price, delete_product, "
+        "create_sale, send_invoice, refund_sale, unknown. Para create_sale usa items=[{referencia,cantidad}], "
         "customer_name/customer_id, phone y email cuando existan. Para update_product_price usa "
         "product_ref y price. Para delete_product usa product_ref. Para send_invoice/refund_sale usa "
         "sale_id o invoice_number. Si faltan datos, devuelve unknown con message.\n\n"
@@ -90,7 +225,7 @@ def plan(text: str, db_context: dict) -> dict:
     except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
         return {
             "action": "unknown",
-            "message": "La IA gratuita no respondió o alcanzó su límite. Los comandos directos siguen disponibles.",
+            "message": "La IA externa gratuita no respondió o alcanzó su límite. Los comandos Lumeon locales siguen funcionando.",
             "detail": str(exc)[:160],
         }
 
@@ -160,6 +295,9 @@ def execute(conn, actor_id: int, action: dict, session_state: dict) -> tuple[dic
         term = str(action.get("query") or action.get("product_ref") or action.get("product_name") or "").strip()
         return {"ok": True, "status": "ready", "intent": name, "results": search_products(conn, term, 100)}, session_state
 
+    if name == "low_stock":
+        return {"ok": True, "status": "ready", "intent": name, "results": low_stock(conn, 100), "message": "Productos con stock bajo."}, session_state
+
     if name == "create_customer":
         customer_id = create_customer(conn, action)
         conn.commit()
@@ -178,6 +316,26 @@ def execute(conn, actor_id: int, action: dict, session_state: dict) -> tuple[dic
         items = action.get("items") or []
         if not items:
             raise SaleError("Indica productos y cantidades")
+
+        customer = None
+        if action.get("customer_id"):
+            customer = conn.execute(
+                "SELECT id,nombre,telefono,email FROM clientes WHERE id=? LIMIT 1",
+                (int(action["customer_id"]),),
+            ).fetchone()
+        elif action.get("customer_name"):
+            matches = conn.execute(
+                "SELECT id,nombre,telefono,email FROM clientes WHERE LOWER(nombre)=LOWER(?) ORDER BY id DESC LIMIT 2",
+                (str(action["customer_name"]).strip(),),
+            ).fetchall()
+            if len(matches) == 1:
+                customer = matches[0]
+
+        customer_id = int(customer["id"]) if customer else action.get("customer_id")
+        customer_name = str(action.get("customer_name") or (customer["nombre"] if customer else "")).strip()
+        phone = str(action.get("phone") or (customer["telefono"] if customer else "")).strip()
+        email = str(action.get("email") or (customer["email"] if customer else "")).strip()
+
         normalized = []
         for item in items:
             product = _product(conn, item.get("referencia") or item.get("product_ref") or item.get("id"))
@@ -187,11 +345,12 @@ def execute(conn, actor_id: int, action: dict, session_state: dict) -> tuple[dic
             if qty <= 0:
                 raise SaleError("La cantidad debe ser mayor que cero")
             normalized.append({"referencia": product["referencia"], "cantidad": qty})
+
         sale_id = create_sale(conn, data={
-            "cliente_id": action.get("customer_id"),
-            "cliente_nombre": str(action.get("customer_name") or "").strip(),
-            "cliente_email": str(action.get("email") or "").strip(),
-            "cliente_telefono": str(action.get("phone") or "").strip(),
+            "cliente_id": customer_id,
+            "cliente_nombre": customer_name,
+            "cliente_email": email,
+            "cliente_telefono": phone,
             "items": normalized,
             "forma_pago": str(action.get("forma_pago") or "Contado"),
             "estado": str(action.get("estado") or "Pendiente"),
@@ -200,7 +359,14 @@ def execute(conn, actor_id: int, action: dict, session_state: dict) -> tuple[dic
         conn.commit()
         delivery = send_invoice_for_sale(conn, sale_id)
         conn.commit()
-        return {"ok": True, "status": "executed", "intent": name, "id": sale_id, "invoice_delivery": {"whatsapp": delivery}, "message": f"Venta {sale_id} creada y procesada."}, session_state
+        return {
+            "ok": True,
+            "status": "executed",
+            "intent": name,
+            "id": sale_id,
+            "invoice_delivery": {"whatsapp": delivery},
+            "message": f"Venta {sale_id} creada y procesada. WhatsApp: {delivery.get('status') or 'NO_ENVIADO'}.",
+        }, session_state
 
     if name == "send_invoice":
         sale = _sale(conn, action.get("sale_id"), action.get("invoice_number"))
@@ -242,4 +408,4 @@ def execute(conn, actor_id: int, action: dict, session_state: dict) -> tuple[dic
         conn.commit()
         return {"ok": True, "status": "executed", "intent": name, "id": int(sale["id"]), "return": result, "message": "Devolución procesada."}, session_state
 
-    return {"ok": True, "status": "unknown", "message": action.get("message") or "No entendí la operación. Puedo buscar, crear, actualizar precios, registrar ventas, enviar facturas y gestionar devoluciones."}, session_state
+    return {"ok": True, "status": "unknown", "message": action.get("message") or "No entendí la operación. Puedo buscar, consultar stock, actualizar precios, registrar ventas, enviar facturas y gestionar devoluciones."}, session_state

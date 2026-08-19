@@ -16,9 +16,13 @@ def list_products():
         actor = current_actor()
         require(actor, "read_product")
         q = (request.args.get("q") or "").strip()
+        try:
+            limit = max(1, min(int(request.args.get("limit", 100)), 100))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "limit inválido"}), 400
         conn = get_db()
         try:
-            return jsonify({"ok": True, "results": search_products(conn, q)})
+            return jsonify({"ok": True, "results": search_products(conn, q, limit)})
         finally:
             conn.close()
     except (AuthenticationError, PermissionError) as exc:

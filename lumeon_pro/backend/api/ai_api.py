@@ -15,12 +15,25 @@ def _session_state() -> dict:
     return {"pending_ai_action": state} if state else {}
 
 
+def _permission_for_action(action: str) -> str:
+    return {
+        "create_customer": "create_customer",
+        "create_product": "create_product",
+        "create_sale": "create_sale",
+        "send_invoice": "send_invoice",
+        "search_customer": "read_customer",
+        "search_product": "read_product",
+        "update_product_price": "create_product",
+        "delete_product": "delete_product",
+        "refund_sale": "refund_sale",
+    }.get(action, "read_sale")
+
+
 @ai_api.post("/ai")
 def ai_message():
     try:
         actor = current_actor()
-        require(actor, "read_sale")
-    except (AuthenticationError, PermissionError) as exc:
+    except AuthenticationError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
 
     body = request.get_json(silent=True) or {}
@@ -31,12 +44,19 @@ def ai_message():
     conn = get_db()
     try:
         state = _session_state()
-        if text.lower().strip() not in {"sí", "si", "no", "cancelar", "cancela", "confirmar", "confirmado", "hazlo"}:
-            planned = plan(text, context(conn))
+        normalized = text.lower().strip()
+        is_confirm = normalized in {"sí", "si", "confirmar", "confirmado", "hazlo"}
+        is_cancel = normalized in {"no", "cancelar", "cancela", "cancelado"}
+
+        if is_confirm and state.get("pending_ai_action"):
+            planned = state["pending_ai_action"]
+            require(actor, _permission_for_action(str(planned.get("action") or "read_sale")))
+            planned = {"action": "confirm_pending"}
+        elif is_cancel:
+            planned = {"action": "cancel_pending"}
         else:
-            planned = {"action": "confirm_pending" if text.lower().strip() in {"sí", "si", "confirmar", "confirmado", "hazlo"} else "cancel_pending"}
-            if planned["action"] == "confirm_pending" and not state.get("pending_ai_action"):
-                return jsonify({"ok": True, "status": "idle", "message": "No hay ninguna operación pendiente."})
+            planned = plan(text, context(conn))
+            require(actor, _permission_for_action(str(planned.get("action") or "read_sale")))
 
         result, state = execute(conn, int(actor.id), planned, state)
         pending = state.get("pending_ai_action")
@@ -45,5 +65,7 @@ def ai_message():
         else:
             session.pop("ai_pending_action", None)
         return jsonify(result), 200 if result.get("ok", True) else 400
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
     finally:
         conn.close()

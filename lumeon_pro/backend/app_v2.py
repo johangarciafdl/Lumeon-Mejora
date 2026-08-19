@@ -61,9 +61,9 @@ def security_headers(response):
 def index():
     path = Path(app.static_folder) / "index.html"
     html = path.read_text(encoding="utf-8")
-    if "/assistant.css" not in html:
+    if 'href="/assistant.css"' not in html:
         html = html.replace("</head>", '<link rel="stylesheet" href="/assistant.css"></head>', 1)
-    if "/assistant.js" not in html:
+    if 'src="/assistant.js"' not in html:
         html = html.replace("</body>", '<script src="/assistant.js" defer></script></body>', 1)
     return html
 

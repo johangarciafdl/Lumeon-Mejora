@@ -51,12 +51,14 @@ def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: s
         status = "ALREADY_SENT" if not force_retry else "RETRY_NOT_ALLOWED"
         return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status=status)}
 
+    provider_name = "unknown"
     try:
         provider = get_whatsapp_provider()
+        provider_name = getattr(provider, "name", provider.__class__.__name__.lower())
         provider.send(phone=phone, message=build_invoice_message(customer_name, invoice_number, total))
         delivery = DeliveryResult(channel="whatsapp", status="SENT")
     except WhatsAppError as exc:
         delivery = DeliveryResult(channel="whatsapp", status="FAILED", error=str(exc)[:500])
 
-    record_attempt(conn, venta_id=sale_id, channel="whatsapp", provider="callmebot", recipient=phone, result=delivery)
+    record_attempt(conn, venta_id=sale_id, channel="whatsapp", provider=provider_name, recipient=phone, result=delivery)
     return {**result, "whatsapp": delivery}

@@ -10,11 +10,14 @@ class WhatsAppError(RuntimeError):
 
 
 class WhatsAppProvider:
+    name = "unknown"
+
     def send(self, *, phone: str, message: str) -> None:
         raise NotImplementedError
 
 
 class CallMeBotProvider(WhatsAppProvider):
+    name = "callmebot"
     endpoint = "https://api.callmebot.com/whatsapp.php"
 
     def __init__(self) -> None:
@@ -54,4 +57,7 @@ def get_whatsapp_provider() -> WhatsAppProvider:
     provider = os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower()
     if provider == "callmebot":
         return CallMeBotProvider()
+    if provider == "meta":
+        from services.meta_whatsapp_provider import MetaWhatsAppProvider
+        return MetaWhatsAppProvider()
     raise WhatsAppError(f"Proveedor WhatsApp no soportado: {provider}")

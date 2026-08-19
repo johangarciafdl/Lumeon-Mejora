@@ -6,7 +6,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+# GPT-OSS 20B is confirmed reachable on the current free-plan API key and
+# supports reasoning plus structured outputs/tool use.
+DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 SYSTEM_INSTRUCTION = """
 Eres el cerebro operativo de LUMEON PRO, una aplicación de ventas e inventario en Colombia.

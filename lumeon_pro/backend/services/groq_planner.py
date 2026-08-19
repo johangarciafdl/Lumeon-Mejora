@@ -50,9 +50,10 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
             {"role": "user", "content": text},
         ],
         "temperature": 0,
-        "max_tokens": 900,
+        "max_completion_tokens": int(os.getenv("GROQ_MAX_COMPLETION_TOKENS", "2048")),
         "response_format": {"type": "json_object"},
         "reasoning_effort": os.getenv("GROQ_REASONING_EFFORT", "medium"),
+        "include_reasoning": False,
     }
 
     req = Request(
@@ -69,7 +70,15 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
         with urlopen(req, timeout=float(os.getenv("GROQ_TIMEOUT", "30"))) as resp:
             raw = resp.read().decode("utf-8")
         response = json.loads(raw)
-        content = response["choices"][0]["message"]["content"]
+        choice = response["choices"][0]
+        message = choice.get("message") or {}
+        content = (message.get("content") or "").strip()
+        if not content:
+            return {
+                "action": "unknown",
+                "message": "No pude interpretar la solicitud en este momento. Puedes intentarlo de nuevo.",
+                "detail": f"finish_reason={choice.get('finish_reason')}; reasoning_hidden={message.get('reasoning') is not None}",
+            }
         result = json.loads(content)
         if not isinstance(result, dict):
             return {"action": "unknown", "message": "No pude interpretar la solicitud."}

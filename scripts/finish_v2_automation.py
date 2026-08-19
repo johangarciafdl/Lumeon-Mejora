@@ -113,9 +113,49 @@ a = assistant.read_text(encoding="utf-8")
 a = a.replace("const API = '/api/v2/assistant/message';", "const API = '/api/v2/assistant/ai';", 1)
 a = a.replace("fab.onclick = () => { panel.classList.add('open'); fab.classList.add('hidden'); input.focus(); };", "fab.onclick = () => { panel.classList.add('open'); panel.style.display='flex'; input.focus(); };", 1)
 a = a.replace("panel.querySelector('.la-close').onclick = () => { panel.classList.remove('open'); fab.classList.remove('hidden'); };", "panel.querySelector('.la-close').onclick = () => { panel.classList.remove('open'); panel.style.display='none'; };", 1)
-a = a.replace("const response=await fetch(API,{method:'POST',headers,credentials:'same-origin',body:JSON.stringify({text})});", "const response=await fetch(API,{method:'POST',headers,credentials:'same-origin',body:JSON.stringify({text})});", 1)
 assistant.write_text(a, encoding="utf-8")
 print("PATCH OK: assistant launcher + AI endpoint")
+
+# 9) Free/local AI fallback: common Spanish commands work even when OpenRouter's free model is unavailable.
+ai = ROOT / "lumeon_pro/backend/services/ai_orchestrator.py"
+local_parser = '''\n\ndef _local_command_plan(text: str) -> dict | None:\n    t = " ".join(str(text or "").strip().split())\n    low = t.lower()\n\n    if low in {"stock bajo", "inventario bajo", "productos con stock bajo"}:\n        return {"action": "low_stock"}\n    if low.startswith("buscar cliente "):\n        return {"action": "search_customer", "query": t[16:].strip()}\n    if low.startswith("buscar producto "):\n        return {"action": "search_product", "query": t[17:].strip()}\n\n    m = re.search(r"(?:cambia|cambiar|actualiza|actualizar)\\s+(?:el\\s+)?precio(?:\\s+del\\s+producto)?\\s+([\\w.-]+)\\s+(?:a|por)\\s*\\$?([0-9]+(?:[.,][0-9]+)?)", low)\n    if m:\n        return {\n            "action": "update_product_price",\n            "product_ref": m.group(1),\n            "price": float(m.group(2).replace('.', '').replace(',', '.')),\n            "confirmation_message": f"Voy a cambiar el precio del producto {m.group(1)} a {m.group(2)}. ¿Confirmas?",\n        }\n\n    m = re.search(r"(?:elimina|eliminar|borra|borrar)\\s+(?:el\\s+)?producto\\s+([\\w.-]+)", low)\n    if m:\n        return {\n            "action": "delete_product",\n            "product_ref": m.group(1),\n            "confirmation_message": f"Voy a eliminar el producto {m.group(1)}. ¿Confirmas?",\n        }\n\n    m = re.search(r"(?:envia|enviar|manda|mandar)\\s+(?:la\\s+)?factura\\s+([\\w.-]+)", low)\n    if m:\n        ref = m.group(1)\n        return {"action": "send_invoice", "sale_id": int(ref) if ref.isdigit() else None, "invoice_number": None if ref.isdigit() else ref}\n\n    m = re.search(r"(?:devuelve|devolver|anula|anular)\\s+(?:la\\s+)?venta\\s+([0-9]+)", low)\n    if m:\n        sale_id = int(m.group(1))\n        return {\n            "action": "refund_sale",\n            "sale_id": sale_id,\n            "confirmation_message": f"Voy a devolver la venta {sale_id} y reponer inventario. ¿Confirmas?",\n        }\n\n    # Structured but natural enough: "venta para Juan telefono 304... productos 123x2,456:1"\n    if low.startswith(("venta ", "registrar venta", "crear venta", "registra venta")):\n        customer_name = ""\n        phone = ""\n        name_match = re.search(r"(?:para|cliente)\\s+(.+?)(?=\\s+(?:telefono|tel|productos?|items?)\\b|$)", t, re.I)\n        if name_match:\n            customer_name = name_match.group(1).strip()\n        phone_match = re.search(r"(?:telefono|tel)\\s*[:=]?\\s*(\\+?[0-9 -]{10,15})", t, re.I)\n        if phone_match:\n            phone = phone_match.group(1).strip()\n        items_match = re.search(r"(?:productos?|items?)\\s*[:=]?\\s*(.+)$", t, re.I)\n        items = []\n        if items_match:\n            for token in re.split(r"[,;]\\s*", items_match.group(1)):\n                mm = re.fullmatch(r"([\\w.-]+)\\s*(?:x|\\*)\\s*(\\d+)", token.strip(), re.I) or re.fullmatch(r"([\\w.-]+)\\s*:\\s*(\\d+)", token.strip())\n                if mm:\n                    items.append({"referencia": mm.group(1), "cantidad": int(mm.group(2))})\n        if items:\n            return {"action": "create_sale", "customer_name": customer_name, "phone": phone, "items": items}\n\n    return None\n'''
+
+replace_once(
+    ai,
+    'import os\nfrom urllib.error import HTTPError, URLError\n',
+    'import os\nimport re\nfrom urllib.error import HTTPError, URLError\n',
+    "AI regex import",
+)
+replace_once(
+    ai,
+    '\n\ndef plan(text: str, db_context: dict) -> dict:\n',
+    local_parser + '\n\ndef plan(text: str, db_context: dict) -> dict:\n',
+    "local AI parser",
+)
+replace_once(
+    ai,
+    '''    local = _local_plan(text)\n    if local:\n        return local\n    key = os.getenv("OPENROUTER_API_KEY", "").strip()\n''',
+    '''    local = _local_plan(text)\n    if local:\n        return local\n    local = _local_command_plan(text)\n    if local:\n        return local\n    key = os.getenv("OPENROUTER_API_KEY", "").strip()\n''',
+    "AI local-first fallback",
+)
+replace_once(
+    ai,
+    '''    if name == "search_product":\n        term = str(action.get("query") or action.get("product_ref") or action.get("product_name") or "").strip()\n        return {"ok": True, "status": "ready", "intent": name, "results": search_products(conn, term, 100)}, session_state\n\n    if name == "create_customer":\n''',
+    '''    if name == "search_product":\n        term = str(action.get("query") or action.get("product_ref") or action.get("product_name") or "").strip()\n        return {"ok": True, "status": "ready", "intent": name, "results": search_products(conn, term, 100)}, session_state\n\n    if name == "low_stock":\n        rows = conn.execute("SELECT id,nombre,referencia,stock,stock_minimo,precio_venta FROM productos WHERE stock <= stock_minimo ORDER BY stock ASC LIMIT 100").fetchall()\n        return {"ok": True, "status": "ready", "intent": name, "results": [dict(r) for r in rows]}, session_state\n\n    if name == "create_customer":\n''',
+    "AI low stock action",
+)
+replace_once(
+    ai,
+    '''        sale_id = create_sale(conn, data={\n            "cliente_id": action.get("customer_id"),\n            "cliente_nombre": str(action.get("customer_name") or "").strip(),\n''',
+    '''        customer_id = action.get("customer_id")\n        customer_name = str(action.get("customer_name") or "").strip()\n        customer_query = str(action.get("customer_query") or "").strip()\n        phone = str(action.get("phone") or "").strip()\n        email = str(action.get("email") or "").strip()\n        if not customer_id and customer_query:\n            matches = search_customers(conn, customer_query, 5)\n            if len(matches) == 1:\n                match = matches[0]\n                customer_id = int(match["id"])\n                customer_name = match["nombre"]\n                phone = phone or str(match.get("telefono") or "")\n                email = email or str(match.get("email") or "")\n        sale_id = create_sale(conn, data={\n            "cliente_id": customer_id,\n            "cliente_nombre": customer_name,\n''',
+    "AI customer resolution",
+)
+replace_once(
+    ai,
+    '            "cliente_email": str(action.get("email") or "").strip(),\n            "cliente_telefono": str(action.get("phone") or "").strip(),\n',
+    '            "cliente_email": email,\n            "cliente_telefono": phone,\n',
+    "AI customer contact reuse",
+)
 
 print("\nFINISH V2 AUTOMATION: OK")
 print("No database was touched by this script.")

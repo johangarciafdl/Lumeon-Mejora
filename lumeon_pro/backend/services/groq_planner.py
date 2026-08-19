@@ -6,7 +6,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-# GPT-OSS 20B is confirmed reachable on the current API key.
 DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 SYSTEM_INSTRUCTION = """
@@ -47,59 +46,6 @@ No necesitas una frase exacta. Si identificas un producto por nombre, referencia
 colócalo en items como referencia textual; Lumeon lo resolverá contra la base real.
 """.strip()
 
-RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "action": {
-            "type": "string",
-            "enum": [
-                "search_customer", "search_product", "low_stock", "create_customer",
-                "create_product", "update_product_price", "delete_product", "create_sale",
-                "send_invoice", "refund_sale", "unknown"
-            ],
-        },
-        "message": {"type": "string"},
-        "query": {"type": "string"},
-        "customer_id": {"type": "integer"},
-        "customer_name": {"type": "string"},
-        "document": {"type": "string"},
-        "phone": {"type": "string"},
-        "email": {"type": "string"},
-        "address": {"type": "string"},
-        "city": {"type": "string"},
-        "product_ref": {"type": "string"},
-        "name": {"type": "string"},
-        "description": {"type": "string"},
-        "category": {"type": "string"},
-        "purchase_price": {"type": "number"},
-        "sale_price": {"type": "number"},
-        "stock": {"type": "integer"},
-        "min_stock": {"type": "integer"},
-        "price": {"type": "number"},
-        "sale_id": {"type": "integer"},
-        "invoice_number": {"type": "string"},
-        "retry": {"type": "boolean"},
-        "reason": {"type": "string"},
-        "confirmation_message": {"type": "string"},
-        "forma_pago": {"type": "string"},
-        "notas": {"type": "string"},
-        "items": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "referencia": {"type": "string"},
-                    "cantidad": {"type": "integer", "minimum": 1},
-                },
-                "required": ["referencia", "cantidad"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    "required": ["action", "message"],
-    "additionalProperties": False,
-}
-
 
 def plan_with_groq(text: str, db_context: dict) -> dict | None:
     key = os.getenv("GROQ_API_KEY", "").strip()
@@ -123,14 +69,7 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
         ],
         "temperature": 0,
         "max_completion_tokens": int(os.getenv("GROQ_MAX_COMPLETION_TOKENS", "4096")),
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "lumeon_action",
-                "strict": True,
-                "schema": RESPONSE_SCHEMA,
-            },
-        },
+        "response_format": {"type": "json_object"},
         "reasoning_effort": os.getenv("GROQ_REASONING_EFFORT", "low"),
         "include_reasoning": False,
     }
@@ -161,6 +100,16 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
         result = json.loads(content)
         if not isinstance(result, dict):
             return {"action": "unknown", "message": "No pude interpretar la solicitud."}
+
+        allowed = {
+            "search_customer", "search_product", "low_stock", "create_customer",
+            "create_product", "update_product_price", "delete_product", "create_sale",
+            "send_invoice", "refund_sale", "unknown",
+        }
+        action = str(result.get("action") or "unknown")
+        if action not in allowed:
+            result["action"] = "unknown"
+            result.setdefault("message", "No pude interpretar la operación solicitada.")
         return result
     except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
         return {

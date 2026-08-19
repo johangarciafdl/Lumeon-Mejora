@@ -22,8 +22,19 @@ class CallMeBotProvider(WhatsAppProvider):
         if not self.api_key:
             raise WhatsAppError("CALLMEBOT_API_KEY no está configurada")
 
+    @staticmethod
+    def normalize_phone(phone: str) -> str:
+        value = "".join(ch for ch in str(phone or "").strip() if ch.isdigit() or ch == "+")
+        if value.startswith("00"):
+            value = "+" + value[2:]
+        elif value.startswith("57") and len(value) == 12:
+            value = "+" + value
+        elif value.startswith("3") and len(value) == 10:
+            value = "+57" + value
+        return value
+
     def send(self, *, phone: str, message: str) -> None:
-        phone = phone.strip()
+        phone = self.normalize_phone(phone)
         if not phone.startswith("+"):
             raise WhatsAppError("El teléfono debe incluir código internacional")
         payload = urlencode({"phone": phone, "text": message, "apikey": self.api_key}).encode()

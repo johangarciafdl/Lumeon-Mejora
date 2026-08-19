@@ -11,6 +11,7 @@ from services.customer_service import create_customer, search_customers
 from services.product_service import create_product, search_products
 from services.sale_service import SaleError, create_sale
 from services.return_service import ReturnError, return_sale
+from services.sale_completion_service import deliver_sale_invoice
 
 legacy_compat_api = Blueprint("legacy_compat_api", __name__, url_prefix="/api")
 
@@ -250,7 +251,9 @@ def crear_venta():
             data = request.get_json(silent=True) or {}
             sale_id = create_sale(conn, data=data, user_id=int(a.id))
             conn.commit()
-            return jsonify({"ok": True, "id": sale_id}), 201
+            whatsapp = deliver_sale_invoice(conn, sale_id)
+            conn.commit()
+            return jsonify({"ok": True, "id": sale_id, "whatsapp": whatsapp}), 201
         finally:
             conn.close()
     except SaleError as exc:

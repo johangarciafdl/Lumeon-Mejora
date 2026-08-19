@@ -16,6 +16,7 @@ from services.product_service import ProductError, create_product
 from services.customer_service import CustomerError, create_customer
 from services.sale_service import SaleError, create_sale
 from services.return_service import ReturnError, return_sale
+from services.sale_completion_service import deliver_sale_invoice
 
 dotenv.load_dotenv()
 settings = load_settings()
@@ -90,7 +91,9 @@ def create_venta_v2():
         try:
             sale_id = create_sale(conn, data=data, user_id=actor.id)
             conn.commit()
-            return jsonify({"ok": True, "venta_id": sale_id}), 201
+            whatsapp = deliver_sale_invoice(conn, sale_id)
+            conn.commit()
+            return jsonify({"ok": True, "venta_id": sale_id, "whatsapp": whatsapp}), 201
         finally:
             conn.close()
     except (AuthenticationError, PermissionError) as exc:

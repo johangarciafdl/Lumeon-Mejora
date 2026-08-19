@@ -18,7 +18,8 @@ class CallMeBotProvider(WhatsAppProvider):
     endpoint = "https://api.callmebot.com/whatsapp.php"
 
     def __init__(self) -> None:
-        self.api_key = os.getenv("CALLMEBOT_API_KEY", "").strip()
+        self.api_key = (os.getenv("CALLMEBOT_API_KEY", "") or os.getenv("CALLMEBOT_KEY", "")).strip()
+        self.country_code = os.getenv("CALLMEBOT_COUNTRY_CODE", "57").strip() or "57"
         if not self.api_key:
             raise WhatsAppError("CALLMEBOT_API_KEY no está configurada")
 

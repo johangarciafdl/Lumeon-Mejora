@@ -368,31 +368,33 @@ function toast(msg,type='success'){
 
 async function checkAuth(){
   try{
-    const resp=await fetch(`${API}/current-user`);
+    const resp=await fetch(`${API}/v2/auth/me`,{credentials:'same-origin'});
     const data=await resp.json();
-    if(data.ok&&data.user){
-      currentUser=data.user;
+    if(data.ok&&data.authenticated){
+      currentUser={username:String(data.user_id||'admin'),role:data.role,user_id:data.user_id};
       document.getElementById('modal-login').classList.remove('open');
-      document.getElementById('sb-username').textContent=data.user.username;
-      document.getElementById('sb-avatar').textContent=data.user.username[0].toUpperCase();
+      document.getElementById('sb-username').textContent=currentUser.username;
+      document.getElementById('sb-avatar').textContent=currentUser.username[0].toUpperCase();
       loadDashboard();
     } else {
       document.getElementById('modal-login').classList.add('open');
       anime({targets:'.login-box',translateY:[30,0],opacity:[0,1],duration:600,easing:'easeOutExpo'});
     }
-  } catch(e){document.getElementById('modal-login').classList.add('open');}
+  } catch(e){
+    document.getElementById('modal-login').classList.add('open');
+  }
 }
 
 async function doLogin(){
   const user=document.getElementById('login-user').value.trim();
   const pass=document.getElementById('login-pass').value;
   if(!user||!pass){showLoginError('Usuario y contraseña requeridos');return;}
-  const resp=await fetch(`${API}/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+  const resp=await fetch(`${API}/v2/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:user,password:pass})});
   const data=await resp.json();
   if(data.ok){
-    currentUser=data;
-    document.getElementById('sb-username').textContent=data.username;
-    document.getElementById('sb-avatar').textContent=data.username[0].toUpperCase();
+    currentUser={username:user,role:data.role,user_id:data.user_id};
+    document.getElementById('sb-username').textContent=user;
+    document.getElementById('sb-avatar').textContent=user[0].toUpperCase();
     anime({targets:'#modal-login',opacity:[1,0],duration:400,easing:'easeInCubic',complete:()=>{document.getElementById('modal-login').classList.remove('open');document.getElementById('login-user').value='';document.getElementById('login-pass').value='';}});
     loadDashboard();
     toast('Bienvenido al sistema');
@@ -408,7 +410,7 @@ function showLoginError(msg){
 
 async function logout(){
   if(confirm('¿Cerrar sesión?')){
-    await fetch(`${API}/logout`,{method:'POST'});
+    await fetch(`${API}/v2/auth/logout`,{method:'POST',credentials:'same-origin'});
     currentUser=null;
     document.getElementById('modal-login').classList.add('open');
     anime({targets:'.login-box',translateY:[30,0],opacity:[0,1],duration:600,easing:'easeOutExpo'});

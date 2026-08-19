@@ -6,29 +6,99 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-# GPT-OSS 20B is confirmed reachable on the current free-plan API key and
-# supports reasoning plus structured outputs/tool use.
+# GPT-OSS 20B is confirmed reachable on the current API key.
 DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 SYSTEM_INSTRUCTION = """
 Eres el cerebro operativo de LUMEON PRO, una aplicación de ventas e inventario en Colombia.
-Interpreta lenguaje natural y conviértelo en UNA sola operación estructurada para Lumeon.
+Tu trabajo NO es inventar datos ni responder con datos de productos/clientes.
+Tu trabajo es interpretar la solicitud del usuario y convertirla en UNA operación estructurada.
 
-Nunca escribas SQL y nunca inventes datos. Usa únicamente el contexto entregado.
+REGLAS OBLIGATORIAS:
+1. Nunca inventes nombres, precios, stock, teléfonos, IDs, facturas ni ningún dato del negocio.
+2. Nunca escribas SQL.
+3. Para búsquedas, devuelve SOLO la acción y el término de búsqueda. Lumeon consultará la base real.
+4. Para una pregunta sobre un producto o cliente, NO respondas con datos del ejemplo del prompt.
+   Devuelve la acción correspondiente para que Lumeon consulte la base.
+5. Para una conversación normal como "hola", devuelve action="unknown" y una respuesta natural breve en message.
+6. Si falta información para ejecutar una operación, devuelve action="unknown" y explica qué falta en message.
+7. Para operaciones destructivas, prepara la acción y un confirmation_message claro.
+8. Devuelve exclusivamente JSON válido y nada fuera del JSON.
 
-Acciones permitidas:
+ACCIONES PERMITIDAS:
 search_customer, search_product, low_stock, create_customer, create_product,
 update_product_price, delete_product, create_sale, send_invoice, refund_sale, unknown.
 
-Para create_sale usa items=[{referencia,cantidad}] y customer_id cuando exista.
-Para cambios destructivos prepara la acción y deja confirmation_message claro.
-Si falta información esencial, usa unknown y explica qué falta en message.
+FORMATO DE ACCIONES:
+- search_customer: query
+- search_product: query
+- low_stock: sin campos extra
+- create_customer: customer_name, document, phone, email, address, city
+- create_product: name, reference/product_ref, description, category, purchase_price, sale_price, stock, min_stock
+- update_product_price: product_ref, price, confirmation_message
+- delete_product: product_ref, confirmation_message
+- create_sale: customer_id o customer_name, phone/email si fueron dados, items=[{referencia,cantidad}], forma_pago, notas
+- send_invoice: sale_id o invoice_number, retry opcional
+- refund_sale: sale_id o invoice_number, reason, confirmation_message
 
-Para una conversación normal (por ejemplo, "hola") devuelve action=unknown y una respuesta natural,
-breve y útil en message. No hables de APIs, modelos, suscripciones ni detalles técnicos.
-
-Responde SOLO JSON válido.
+IMPORTANTE PARA create_sale:
+Puedes entender lenguaje libre como "dos unidades", "2", "dos de la crema", etc.
+No necesitas una frase exacta. Si identificas un producto por nombre, referencia o ID,
+colócalo en items como referencia textual; Lumeon lo resolverá contra la base real.
 """.strip()
+
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": [
+                "search_customer", "search_product", "low_stock", "create_customer",
+                "create_product", "update_product_price", "delete_product", "create_sale",
+                "send_invoice", "refund_sale", "unknown"
+            ],
+        },
+        "message": {"type": "string"},
+        "query": {"type": "string"},
+        "customer_id": {"type": "integer"},
+        "customer_name": {"type": "string"},
+        "document": {"type": "string"},
+        "phone": {"type": "string"},
+        "email": {"type": "string"},
+        "address": {"type": "string"},
+        "city": {"type": "string"},
+        "product_ref": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "category": {"type": "string"},
+        "purchase_price": {"type": "number"},
+        "sale_price": {"type": "number"},
+        "stock": {"type": "integer"},
+        "min_stock": {"type": "integer"},
+        "price": {"type": "number"},
+        "sale_id": {"type": "integer"},
+        "invoice_number": {"type": "string"},
+        "retry": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "confirmation_message": {"type": "string"},
+        "forma_pago": {"type": "string"},
+        "notas": {"type": "string"},
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "referencia": {"type": "string"},
+                    "cantidad": {"type": "integer", "minimum": 1},
+                },
+                "required": ["referencia", "cantidad"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["action", "message"],
+    "additionalProperties": False,
+}
 
 
 def plan_with_groq(text: str, db_context: dict) -> dict | None:
@@ -39,9 +109,9 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
     model = os.getenv("GROQ_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     prompt = (
         SYSTEM_INSTRUCTION
-        + "\n\nCONTEXTO ACTUAL:\n"
+        + "\n\nCONTEXTO DISPONIBLE PARA DESAMBIGUAR NOMBRES Y REFERENCIAS (NO COPIES DATOS COMO SI LOS HUBIERAS CONSULTADO):\n"
         + json.dumps(db_context, ensure_ascii=False, separators=(",", ":"))
-        + "\n\nSOLICITUD:\n"
+        + "\n\nSOLICITUD DEL USUARIO:\n"
         + text
     )
 
@@ -52,9 +122,16 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
             {"role": "user", "content": text},
         ],
         "temperature": 0,
-        "max_completion_tokens": int(os.getenv("GROQ_MAX_COMPLETION_TOKENS", "2048")),
-        "response_format": {"type": "json_object"},
-        "reasoning_effort": os.getenv("GROQ_REASONING_EFFORT", "medium"),
+        "max_completion_tokens": int(os.getenv("GROQ_MAX_COMPLETION_TOKENS", "4096")),
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "lumeon_action",
+                "strict": True,
+                "schema": RESPONSE_SCHEMA,
+            },
+        },
+        "reasoning_effort": os.getenv("GROQ_REASONING_EFFORT", "low"),
         "include_reasoning": False,
     }
 
@@ -79,7 +156,7 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
             return {
                 "action": "unknown",
                 "message": "No pude interpretar la solicitud en este momento. Puedes intentarlo de nuevo.",
-                "detail": f"finish_reason={choice.get('finish_reason')}; reasoning_hidden={message.get('reasoning') is not None}",
+                "detail": f"finish_reason={choice.get('finish_reason')}",
             }
         result = json.loads(content)
         if not isinstance(result, dict):

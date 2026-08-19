@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import requests
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-20b"
@@ -74,29 +74,32 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
         "include_reasoning": False,
     }
 
-    req = Request(
-        GROQ_URL,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "LUMEON-PRO/2",
+    }
 
     try:
-        with urlopen(req, timeout=float(os.getenv("GROQ_TIMEOUT", "30"))) as resp:
-            raw = resp.read().decode("utf-8")
-        response = json.loads(raw)
-        choice = response["choices"][0]
+        response = requests.post(
+            GROQ_URL,
+            headers=headers,
+            json=payload,
+            timeout=float(os.getenv("GROQ_TIMEOUT", "30")),
+        )
+        response.raise_for_status()
+        raw = response.json()
+        choice = raw["choices"][0]
         message = choice.get("message") or {}
         content = (message.get("content") or "").strip()
+
         if not content:
             return {
                 "action": "unknown",
                 "message": "No pude interpretar la solicitud en este momento. Puedes intentarlo de nuevo.",
                 "detail": f"finish_reason={choice.get('finish_reason')}",
             }
+
         result = json.loads(content)
         if not isinstance(result, dict):
             return {"action": "unknown", "message": "No pude interpretar la solicitud."}
@@ -111,9 +114,17 @@ def plan_with_groq(text: str, db_context: dict) -> dict | None:
             result["action"] = "unknown"
             result.setdefault("message", "No pude interpretar la operación solicitada.")
         return result
-    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
+
+    except requests.HTTPError as exc:
+        detail = exc.response.text[:500] if exc.response is not None else str(exc)
+        return {
+            "action": "unknown",
+            "message": "No pude comunicarme con el motor de IA en este momento.",
+            "detail": f"HTTP {exc.response.status_code if exc.response is not None else 'error'}: {detail}",
+        }
+    except (requests.RequestException, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
         return {
             "action": "unknown",
             "message": "No pude interpretar la solicitud en este momento. Puedes intentarlo de nuevo.",
-            "detail": str(exc)[:160],
+            "detail": str(exc)[:300],
         }

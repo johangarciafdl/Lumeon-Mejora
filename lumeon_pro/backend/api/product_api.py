@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
-
 from core.db import get_db
 from services.auth_service import AuthenticationError, current_actor
 from services.authorization_service import require

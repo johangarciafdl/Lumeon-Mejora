@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>LUMEON PRO</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
@@ -151,6 +151,452 @@ textarea{resize:vertical;min-height:80px}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--bg3)}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* LUMEON MOBILE APP UI V2 */
+@media (max-width: 768px){
+
+  html, body{
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    overflow-x:hidden;
+    overscroll-behavior-x:none;
+    -webkit-text-size-adjust:100%;
+  }
+
+  body{
+    display:block;
+    font-size:14px;
+    touch-action:manipulation;
+  }
+
+  /* Sidebar cerrado por defecto */
+  #sidebar{
+    width:min(290px,84vw);
+    height:100dvh;
+    min-height:100dvh;
+    left:0;
+    transform:translateX(-105%);
+    transition:transform .22s ease;
+    box-shadow:12px 0 32px rgba(0,0,0,.22);
+    z-index:5000;
+  }
+
+  #sidebar.mobile-open{
+    transform:translateX(0);
+  }
+
+  #mobile-menu-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.48);
+    z-index:4999;
+    display:none;
+    backdrop-filter:blur(2px);
+  }
+
+  #mobile-menu-backdrop.open{
+    display:block;
+  }
+
+  #main{
+    width:100%;
+    min-width:0;
+    margin-left:0 !important;
+  }
+
+  #topbar{
+    width:100%;
+    height:58px;
+    padding:0 12px;
+    gap:10px;
+    position:sticky;
+    top:0;
+    z-index:1000;
+  }
+
+  #topbar-title{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:18px;
+  }
+
+  #topbar-right{
+    gap:6px;
+  }
+
+  #topbar-action{
+    max-width:130px;
+    padding:8px 10px;
+    font-size:11px;
+    white-space:nowrap;
+  }
+
+  #content{
+    width:100%;
+    min-width:0;
+    padding:14px 12px 90px;
+    overflow-x:hidden;
+  }
+
+  .page-header{
+    margin-bottom:16px;
+    display:block;
+  }
+
+  .page-header-left h2{
+    font-size:23px;
+  }
+
+  .page-header-left p{
+    font-size:11px;
+  }
+
+  /* KPIs en una columna compacta */
+  .kpi-grid{
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin-bottom:14px;
+  }
+
+  .kpi-card{
+    padding:15px 13px;
+    min-width:0;
+  }
+
+  .kpi-label{
+    font-size:8px;
+    letter-spacing:1px;
+    line-height:1.3;
+  }
+
+  .kpi-value{
+    font-size:21px;
+  }
+
+  .kpi-sub{
+    font-size:9px;
+  }
+
+  .two-col{
+    grid-template-columns:1fr !important;
+    gap:12px;
+  }
+
+  .card{
+    padding:14px;
+    margin-bottom:12px;
+    min-width:0;
+  }
+
+  .card-header{
+    margin-bottom:13px;
+    padding-bottom:11px;
+  }
+
+  .card-title{
+    font-size:14px;
+  }
+
+  .card-subtitle{
+    font-size:10px;
+  }
+
+  /* Formularios */
+  .form-grid,
+  .form-grid.cols3{
+    grid-template-columns:1fr !important;
+    gap:11px;
+  }
+
+  .form-group.full{
+    grid-column:auto;
+  }
+
+  input, select, textarea{
+    min-height:44px;
+    font-size:16px;
+    padding:10px 12px;
+  }
+
+  label{
+    font-size:9px;
+  }
+
+  .btn{
+    min-height:42px;
+    padding:10px 13px;
+  }
+
+  .btn-sm{
+    min-height:38px;
+    padding:8px 11px;
+  }
+
+  /* Modales como pantallas completas */
+  .modal-overlay{
+    align-items:stretch;
+    justify-content:stretch;
+    padding:0;
+  }
+
+  .modal,
+  .modal.modal-xl{
+    width:100%;
+    max-width:none;
+    height:100dvh;
+    max-height:none;
+    min-height:100dvh;
+    border-radius:0;
+    border:0;
+  }
+
+  .modal-header{
+    padding:14px 15px;
+  }
+
+  .modal-body{
+    padding:15px;
+  }
+
+  .modal-footer{
+    padding:12px 15px;
+    padding-bottom:max(12px, env(safe-area-inset-bottom));
+  }
+
+  /* Barras de búsqueda */
+  .search-bar{
+    width:100%;
+    max-width:none;
+    flex:none;
+  }
+
+  .search-bar input{
+    min-height:44px;
+  }
+
+  /* Pestañas */
+  .tabs{
+    overflow-x:auto;
+    scrollbar-width:none;
+    white-space:nowrap;
+    margin-bottom:14px;
+  }
+
+  .tabs::-webkit-scrollbar{
+    display:none;
+  }
+
+  .tab{
+    flex:0 0 auto;
+    padding:10px 12px;
+    font-size:11px;
+  }
+
+  /* Tablas -> tarjetas */
+  .table-wrap{
+    width:100%;
+    overflow-x:hidden;
+  }
+
+  .table-wrap table{
+    width:100%;
+    min-width:0 !important;
+  }
+
+  .table-wrap thead{
+    display:none;
+  }
+
+  .table-wrap tbody{
+    display:block;
+    width:100%;
+  }
+
+  .table-wrap tbody tr{
+    display:block;
+    width:100%;
+    margin-bottom:10px;
+    padding:10px 12px;
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:6px;
+    box-shadow:0 1px 4px rgba(26,24,20,.05);
+  }
+
+  .table-wrap tbody tr:last-child{
+    margin-bottom:0;
+  }
+
+  .table-wrap tbody td{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    width:100%;
+    padding:7px 0;
+    border-bottom:1px solid var(--border);
+    font-size:12px;
+    text-align:right;
+  }
+
+  .table-wrap tbody td:last-child{
+    border-bottom:0;
+  }
+
+  #tbl-recientes tbody td:nth-child(1)::before{content:"Factura";}
+  #tbl-recientes tbody td:nth-child(2)::before{content:"Cliente";}
+  #tbl-recientes tbody td:nth-child(3)::before{content:"Total";}
+  #tbl-recientes tbody td:nth-child(4)::before{content:"Estado";}
+  #tbl-recientes tbody td:nth-child(5)::before{content:"Fecha";}
+
+  #tbl-inventario tbody td:nth-child(1)::before{content:"Referencia";}
+  #tbl-inventario tbody td:nth-child(2)::before{content:"Producto";}
+  #tbl-inventario tbody td:nth-child(3)::before{content:"Categoría";}
+  #tbl-inventario tbody td:nth-child(4)::before{content:"P. Compra";}
+  #tbl-inventario tbody td:nth-child(5)::before{content:"P. Venta";}
+  #tbl-inventario tbody td:nth-child(6)::before{content:"Margen";}
+  #tbl-inventario tbody td:nth-child(7)::before{content:"Stock";}
+  #tbl-inventario tbody td:nth-child(8)::before{content:"Estado";}
+  #tbl-inventario tbody td:nth-child(9)::before{content:"Acciones";}
+
+  #tbl-ventas tbody td:nth-child(1)::before{content:"Factura";}
+  #tbl-ventas tbody td:nth-child(2)::before{content:"Cliente";}
+  #tbl-ventas tbody td:nth-child(3)::before{content:"Ciclo";}
+  #tbl-ventas tbody td:nth-child(4)::before{content:"Fecha";}
+  #tbl-ventas tbody td:nth-child(5)::before{content:"Pago";}
+  #tbl-ventas tbody td:nth-child(6)::before{content:"Total";}
+  #tbl-ventas tbody td:nth-child(7)::before{content:"Ganancia";}
+  #tbl-ventas tbody td:nth-child(8)::before{content:"Estado";}
+  #tbl-ventas tbody td:nth-child(9)::before{content:"Acciones";}
+
+  #tbl-clientes tbody td:nth-child(1)::before{content:"Nombre";}
+  #tbl-clientes tbody td:nth-child(2)::before{content:"Documento";}
+  #tbl-clientes tbody td:nth-child(3)::before{content:"Teléfono";}
+  #tbl-clientes tbody td:nth-child(4)::before{content:"Ciudad";}
+  #tbl-clientes tbody td:nth-child(5)::before{content:"Correo";}
+  #tbl-clientes tbody td:nth-child(6)::before{content:"Acciones";}
+
+  #tbl-devoluciones tbody td:nth-child(1)::before{content:"Factura";}
+  #tbl-devoluciones tbody td:nth-child(2)::before{content:"Cliente";}
+  #tbl-devoluciones tbody td:nth-child(3)::before{content:"Producto";}
+  #tbl-devoluciones tbody td:nth-child(4)::before{content:"Cantidad";}
+  #tbl-devoluciones tbody td:nth-child(5)::before{content:"Motivo";}
+  #tbl-devoluciones tbody td:nth-child(6)::before{content:"Fecha";}
+  #tbl-devoluciones tbody td:nth-child(7)::before{content:"Estado";}
+
+  .table-wrap tbody td::before{
+    color:var(--ink3);
+    font-size:9px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.8px;
+    text-align:left;
+    flex:0 0 34%;
+  }
+
+  .table-wrap tbody td > *{
+    max-width:64%;
+  }
+
+  /* Tabla de items de una venta */
+  .items-table-wrap{
+    overflow-x:hidden;
+  }
+
+  .items-table-wrap thead{
+    display:none;
+  }
+
+  .items-table-wrap tbody tr{
+    display:block;
+    padding:10px;
+    margin-bottom:8px;
+    border-bottom:1px solid var(--border);
+  }
+
+  .items-table-wrap tbody td{
+    display:flex;
+    justify-content:space-between;
+    padding:6px 0;
+    font-size:11px;
+  }
+
+  /* Ciclos */
+  .ciclo-header{
+    padding:15px;
+    gap:10px;
+  }
+
+  .ciclo-name{
+    font-size:15px;
+  }
+
+  .ciclo-meta{
+    font-size:9px;
+  }
+
+  .ciclo-stats{
+    gap:10px;
+  }
+
+  .ciclo-stat-val{
+    font-size:14px;
+  }
+
+  .ciclo-stat-label{
+    font-size:8px;
+  }
+
+  .ciclo-body{
+    padding:14px;
+  }
+
+  /* Toasts */
+  #toast{
+    left:10px;
+    right:10px;
+    bottom:12px;
+  }
+
+  .toast-item{
+    min-width:0;
+    width:100%;
+    font-size:11px;
+  }
+
+  /* Menú inferior no sustituye al menú lateral: el lateral permanece cerrado
+     y aparece solo con el botón ☰. */
+  #mobile-menu-button{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    width:40px;
+    height:40px;
+    min-width:40px;
+    border:1px solid var(--border);
+    background:var(--bg2);
+    color:var(--slate);
+    border-radius:6px;
+    font-size:20px;
+    cursor:pointer;
+  }
+
+  /* Botones de acción dentro de filas */
+  td[style*="display:flex"]{
+    flex-wrap:wrap;
+  }
+}
+
+@media (min-width:769px){
+  #mobile-menu-button,
+  #mobile-menu-backdrop{
+    display:none !important;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -883,5 +1329,109 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 anime({targets:'.nav-item',translateX:[-20,0],opacity:[0,1],delay:anime.stagger(60,{start:200}),duration:500,easing:'easeOutExpo'});
 checkAuth();
 </script>
+
+<script>
+/* LUMEON MOBILE APP CONTROLS */
+(function(){
+  function setupMobileMenu(){
+    if(window.__lumeonMobileReady) return;
+    window.__lumeonMobileReady = true;
+
+    const topbar = document.getElementById('topbar');
+    const sidebar = document.getElementById('sidebar');
+
+    if(!topbar || !sidebar) return;
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'mobile-menu-backdrop';
+    document.body.appendChild(backdrop);
+
+    const menuButton = document.createElement('button');
+    menuButton.id = 'mobile-menu-button';
+    menuButton.type = 'button';
+    menuButton.setAttribute('aria-label','Abrir menú');
+    menuButton.textContent = '☰';
+
+    const title = document.getElementById('topbar-title');
+    if(title){
+      topbar.insertBefore(menuButton, title);
+    }else{
+      topbar.insertBefore(menuButton, topbar.firstChild);
+    }
+
+    window.openMobileMenu = function(){
+      sidebar.classList.add('mobile-open');
+      backdrop.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    };
+
+    window.closeMobileMenu = function(){
+      sidebar.classList.remove('mobile-open');
+      backdrop.classList.remove('open');
+      document.body.style.overflow = '';
+    };
+
+    menuButton.addEventListener('click', function(){
+      if(sidebar.classList.contains('mobile-open')){
+        window.closeMobileMenu();
+      }else{
+        window.openMobileMenu();
+      }
+    });
+
+    backdrop.addEventListener('click', window.closeMobileMenu);
+
+    /* Cada opción cierra el menú inmediatamente en móvil. */
+    document.querySelectorAll('#sidebar .nav-item').forEach(function(item){
+      item.addEventListener('click', function(){
+        if(window.innerWidth <= 768){
+          window.closeMobileMenu();
+        }
+      });
+    });
+
+    /* También cerramos si una función de navegación cambia de página. */
+    if(typeof window.goto === 'function' && !window.goto.__mobileWrapped){
+      const originalGoto = window.goto;
+      const wrappedGoto = function(page){
+        const result = originalGoto(page);
+        if(window.innerWidth <= 768){
+          window.closeMobileMenu();
+        }
+        return result;
+      };
+      wrappedGoto.__mobileWrapped = true;
+      window.goto = wrappedGoto;
+    }
+
+    /* Evita el zoom por rueda con Ctrl en escritorio táctil. */
+    document.addEventListener('wheel', function(e){
+      if(e.ctrlKey){
+        e.preventDefault();
+      }
+    }, {passive:false});
+
+    /* Evita gestos de zoom en navegadores que respetan gesturestart. */
+    document.addEventListener('gesturestart', function(e){
+      e.preventDefault();
+    });
+
+    document.addEventListener('gesturechange', function(e){
+      e.preventDefault();
+    });
+
+    document.addEventListener('gestureend', function(e){
+      e.preventDefault();
+    });
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', setupMobileMenu);
+  }else{
+    setupMobileMenu();
+  }
+})();
+</script>
+
 </body>
 </html>

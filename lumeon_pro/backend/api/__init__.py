@@ -29,3 +29,7 @@ def register_blueprints(app):
     app.register_blueprint(system_api)
     app.register_blueprint(legacy_compat_api)
     app.register_blueprint(ai_api)
+
+from .admin_api import admin_api
+
+    app.register_blueprint(admin_api)

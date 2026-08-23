@@ -10,6 +10,7 @@ from services.authorization_service import require
 from services.customer_service import create_customer, search_customers
 from services.product_service import create_product, search_products
 from services.sale_service import SaleError, create_sale
+from services.sale_delete_service import SaleDeleteError, delete_sale
 from services.return_service import ReturnError, return_sale
 from services.sale_completion_service import deliver_sale_invoice
 
@@ -260,6 +261,49 @@ def crear_venta():
         return jsonify({"ok": False, "error": str(exc)}), 400
     except (AuthenticationError, PermissionError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+
+@legacy_compat_api.delete("/ventas/<int:sale_id>")
+def eliminar_venta(sale_id: int):
+    try:
+        a = current_actor()
+        require(a, "delete_sale")
+
+        conn = get_db()
+
+        try:
+            result = delete_sale(
+                conn,
+                sale_id=sale_id,
+                user_id=int(a.id),
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                **result,
+            }), 200
+
+        except Exception:
+            conn.rollback()
+            raise
+
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 403
+
+    except SaleDeleteError as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 400
 
 
 @legacy_compat_api.get("/ventas/<int:sale_id>")

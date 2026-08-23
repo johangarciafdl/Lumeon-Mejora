@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from services.communication_service import DeliveryResult, can_retry, record_attempt
 from services.invoice_service import build_invoice
 from services.whatsapp_provider import WhatsAppError, get_whatsapp_provider
@@ -53,10 +55,33 @@ def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: s
 
     try:
         provider = get_whatsapp_provider()
-        provider.send(phone=phone, message=build_invoice_message(customer_name, invoice_number, total))
+
+        delivery_recipient = phone
+        if os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower() == "callmebot":
+            delivery_recipient = (
+                os.getenv("CALLMEBOT_DEFAULT_PHONE", "").strip()
+                or phone
+            )
+
+        provider.send(
+            phone=delivery_recipient,
+            message=build_invoice_message(
+                customer_name,
+                invoice_number,
+                total,
+                items,
+            ),
+        )
         delivery = DeliveryResult(channel="whatsapp", status="SENT")
     except WhatsAppError as exc:
         delivery = DeliveryResult(channel="whatsapp", status="FAILED", error=str(exc)[:500])
 
-    record_attempt(conn, venta_id=sale_id, channel="whatsapp", provider="callmebot", recipient=phone, result=delivery)
+    record_attempt(
+        conn,
+        venta_id=sale_id,
+        channel="whatsapp",
+        provider=os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower(),
+        recipient=delivery_recipient,
+        result=delivery,
+    )
     return {**result, "whatsapp": delivery}

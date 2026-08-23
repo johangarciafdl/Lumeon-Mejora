@@ -36,10 +36,38 @@ class CallMeBotProvider:
             raise WhatsAppError(f"No se pudo enviar WhatsApp: {exc}") from exc
 
 
-def build_invoice_message(customer_name: str, invoice: str, total: float) -> str:
-    return (
-        f"Hola {customer_name or 'Cliente'} 👋\n\n"
-        f"LUMEON te envía tu factura #{invoice}.\n"
-        f"Total: ${total:,.2f}\n\n"
-        "Gracias por tu compra."
-    )
+def build_invoice_message(
+    customer_name: str,
+    invoice: str,
+    total: float,
+    items: list[dict] | None = None,
+) -> str:
+    lines = [
+        "*LUMEON - FACTURA*",
+        f"Factura: *#{invoice}*",
+        f"Cliente: {customer_name or 'Consumidor final'}",
+        "",
+    ]
+
+    for item in items or []:
+        name = str(
+            item.get("nombre")
+            or item.get("referencia")
+            or "Producto"
+        ).strip()
+
+        quantity = int(item.get("cantidad") or 0)
+        price = float(item.get("precio_venta") or 0)
+
+        lines.append(
+            f"{quantity} x {name} - ${quantity * price:,.0f}"
+        )
+
+    lines.extend([
+        "",
+        f"*TOTAL: ${total:,.0f}*",
+        "",
+        "Gracias por tu compra. 💛",
+    ])
+
+    return "\n".join(lines)

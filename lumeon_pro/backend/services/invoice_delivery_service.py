@@ -35,34 +35,83 @@ def can_send_invoice(conn, sale_id: int, channel: str = "whatsapp") -> tuple[boo
 def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: str,
                     phone: str, items: list[dict], total: float,
                     force_retry: bool = False) -> dict:
-    sale = conn.execute("SELECT estado FROM ventas WHERE id=? LIMIT 1", (sale_id,)).fetchone()
+    sale = conn.execute(
+        "SELECT estado FROM ventas WHERE id=? LIMIT 1",
+        (sale_id,),
+    ).fetchone()
+
     if not sale:
-        return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="NOT_FOUND")}
+        return {
+            "invoice": None,
+            "whatsapp": DeliveryResult(
+                channel="whatsapp",
+                status="NOT_FOUND",
+            ),
+        }
 
     state = str(sale["estado"] or "").strip().lower()
     if state in BLOCKED_STATES:
-        return {"invoice": None, "whatsapp": DeliveryResult(channel="whatsapp", status="BLOCKED", error="La venta no admite entrega")}
+        return {
+            "invoice": None,
+            "whatsapp": DeliveryResult(
+                channel="whatsapp",
+                status="BLOCKED",
+                error="La venta no admite entrega",
+            ),
+        }
 
-    invoice = build_invoice(invoice_number=invoice_number, customer_name=customer_name, items=items, total=total)
+    invoice = build_invoice(
+        invoice_number=invoice_number,
+        customer_name=customer_name,
+        items=items,
+        total=total,
+    )
     result = {"invoice": invoice, "whatsapp": None}
-    phone = str(phone or "").strip()
-    if not phone:
-        return result
 
-    if not can_retry(conn, venta_id=sale_id, channel="whatsapp", recipient=phone):
+    provider = get_whatsapp_provider()
+    provider_name = getattr(
+        provider,
+        "name",
+        provider.__class__.__name__.lower(),
+    )
+
+    customer_phone = str(phone or "").strip()
+    delivery_recipient = customer_phone
+
+    # CallMeBot gratuito solo puede enviar al número autorizado.
+    # Por eso las notificaciones de Lumeon se envían al administrador.
+    if provider_name.lower() in {"callmebot", "callmebotprovider"}:
+        delivery_recipient = (
+            os.getenv("CALLMEBOT_DEFAULT_PHONE", "").strip()
+            or customer_phone
+        )
+
+    if not delivery_recipient:
+        return {
+            **result,
+            "whatsapp": DeliveryResult(
+                channel="whatsapp",
+                status="FAILED",
+                error="No hay teléfono de entrega configurado",
+            ),
+        }
+
+    if not can_retry(
+        conn,
+        venta_id=sale_id,
+        channel="whatsapp",
+        recipient=delivery_recipient,
+    ):
         status = "ALREADY_SENT" if not force_retry else "RETRY_NOT_ALLOWED"
-        return {**result, "whatsapp": DeliveryResult(channel="whatsapp", status=status)}
+        return {
+            **result,
+            "whatsapp": DeliveryResult(
+                channel="whatsapp",
+                status=status,
+            ),
+        }
 
     try:
-        provider = get_whatsapp_provider()
-
-        delivery_recipient = phone
-        if os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower() == "callmebot":
-            delivery_recipient = (
-                os.getenv("CALLMEBOT_DEFAULT_PHONE", "").strip()
-                or phone
-            )
-
         provider.send(
             phone=delivery_recipient,
             message=build_invoice_message(
@@ -72,16 +121,28 @@ def deliver_invoice(conn, *, sale_id: int, invoice_number: str, customer_name: s
                 items,
             ),
         )
-        delivery = DeliveryResult(channel="whatsapp", status="SENT")
+        delivery = DeliveryResult(
+            channel="whatsapp",
+            status="SENT",
+        )
     except WhatsAppError as exc:
-        delivery = DeliveryResult(channel="whatsapp", status="FAILED", error=str(exc)[:500])
+        delivery = DeliveryResult(
+            channel="whatsapp",
+            status="FAILED",
+            error=str(exc)[:500],
+        )
 
     record_attempt(
         conn,
         venta_id=sale_id,
         channel="whatsapp",
-        provider=os.getenv("WHATSAPP_PROVIDER", "callmebot").strip().lower(),
+        provider=provider_name,
         recipient=delivery_recipient,
         result=delivery,
     )
-    return {**result, "whatsapp": delivery}
+
+    return {
+        **result,
+        "whatsapp": delivery,
+    }
+

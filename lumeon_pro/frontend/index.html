@@ -733,7 +733,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="page" id="page-ventas">
       <div class="page-header"><div class="page-header-left"><h2>Ventas</h2><p>Registro de transacciones y facturas</p><div class="page-header-line"></div></div></div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-wrap:wrap">
-        <div class="search-bar"><span class="search-icon">&#9906;</span><input type="text" placeholder="Buscar factura o cliente..." id="venta-search" oninput="loadVentas()"></div>
+        <div class="search-bar"><span class="search-icon">&#9906;</span><input type="text" placeholder="Buscar factura o cliente..." id="venta-search" oninput="renderVentas()"></div>
       </div>
       <div class="tabs" id="ventas-tabs">
         <button class="tab active" onclick="filterVentas(this,'')">Todas</button>
@@ -905,10 +905,30 @@ textarea{resize:vertical;min-height:80px}
 </div>
 <script>
 const API = window.location.origin + '/api';
-let currentPage='dashboard', ventaItems=[], editProductoId=null, editClienteId=null, editVentaId=null, ventasEstadoFiltro='', currentUser=null;
+let currentPage='dashboard', ventaItems=[], editProductoId=null, editClienteId=null, editVentaId=null, ventasEstadoFiltro='', currentUser=null, ventasCache=[];
 
 function fmt(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)}
 function fmtDate(s){if(!s)return '—';return s.split('T')[0].split('-').reverse().join('/')}
+
+
+function applyAdminUI(){
+  const isAdmin=
+    currentUser &&
+    String(currentUser.role||'').trim().toLowerCase()==='admin';
+
+  window.lumeonIsAdmin=isAdmin;
+
+  document.querySelectorAll('.admin-only-nav').forEach(el=>{
+    el.style.display=isAdmin?'':'none';
+  });
+
+  /*
+   * Redibujar ventas porque el botón 🗑 depende del rol.
+   */
+  if(document.getElementById('tbl-ventas') && ventasCache.length){
+    renderVentas();
+  }
+}
 
 function toast(msg,type='success'){
   const t=document.getElementById('toast');
@@ -931,12 +951,7 @@ async function checkAuth(){
         user_id:data.user_id
       };
 
-      if(currentUser.role==='admin'){
-        window.lumeonIsAdmin=true;
-        document.querySelectorAll('.admin-only-nav').forEach(el=>{
-          el.style.display='';
-        });
-      }
+      applyAdminUI();
 
       document.getElementById('modal-login').classList.remove('open');
       document.getElementById('sb-username').textContent=currentUser.username;
@@ -964,12 +979,7 @@ async function doLogin(){
       user_id:data.user_id
     };
 
-    if(currentUser.role==='admin'){
-      window.lumeonIsAdmin=true;
-      document.querySelectorAll('.admin-only-nav').forEach(el=>{
-        el.style.display='';
-      });
-    }
+    applyAdminUI();
 
     document.getElementById('sb-username').textContent=user;
     document.getElementById('sb-avatar').textContent=user[0].toUpperCase();
@@ -1097,45 +1107,196 @@ async function delProducto(id,nombre){
 
 // VENTAS
 async function loadVentas(){
-  const q=document.getElementById('venta-search')?.value||'';
-  const data=await fetch(`${API}/ventas?q=${q}&estado=${ventasEstadoFiltro}`).then(r=>r.json());
-  document.querySelector('#tbl-ventas tbody').innerHTML=data.map(v=>`
+  const q=(document.getElementById('venta-search')?.value||'').trim().toLowerCase();
+
+  try{
+    /*
+     * Cargamos todas las ventas y filtramos en el navegador.
+     * Así los tabs funcionan independientemente de variaciones
+     * entre los endpoints legacy y v2.
+     */
+    const response=await fetch(`${API}/ventas?limit=200`,{
+      credentials:'same-origin'
+    });
+
+    const data=await response.json();
+
+    if(!response.ok){
+      throw new Error(data.error||'No se pudieron cargar las ventas');
+    }
+
+    ventasCache=Array.isArray(data)
+      ? data
+      : (Array.isArray(data.results)?data.results:[]);
+
+    renderVentas();
+
+  }catch(e){
+    console.error('loadVentas:',e);
+
+    document.querySelector('#tbl-ventas tbody').innerHTML=
+      `<tr><td colspan="9" class="empty">
+        <div class="empty-title">Error al cargar ventas</div>
+        <div class="empty-text">${escapeHtml(e.message||'Error desconocido')}</div>
+      </td></tr>`;
+  }
+}
+
+function renderVentas(){
+  const q=(document.getElementById('venta-search')?.value||'').trim().toLowerCase();
+  const estadoFiltro=String(ventasEstadoFiltro||'').trim().toLowerCase();
+
+  let data=ventasCache.filter(v=>{
+    const texto=[
+      v.numero_factura,
+      v.cliente_nombre,
+      v.cliente_email,
+      v.cliente_telefono
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    const coincideBusqueda=!q || texto.includes(q);
+    const estado=String(v.estado||'').trim().toLowerCase();
+    const coincideEstado=!estadoFiltro || estado===estadoFiltro;
+
+    return coincideBusqueda && coincideEstado;
+  });
+
+  const tbody=document.querySelector('#tbl-ventas tbody');
+
+  if(!data.length){
+    tbody.innerHTML=
+      `<tr><td colspan="9" class="empty">
+        <div class="empty-title">Sin ventas</div>
+        <div class="empty-text">No hay ventas para este filtro.</div>
+      </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML=data.map(v=>`
     <tr>
-      <td class="td-mono">${v.numero_factura}</td>
-      <td style="font-weight:500">${v.cliente_nombre||'—'}</td>
-      <td><span class="badge badge-blue">${v.ciclo||'—'}</span></td>
-      <td style="color:var(--ink3)">${fmtDate(v.fecha)}</td>
-      <td>${v.forma_pago}</td>
-      <td class="td-mono" style="font-weight:600">${fmt(v.total)}</td>
-      <td class="td-mono" style="color:var(--sage)">${fmt(v.ganancia)}</td>
-      <td>${badgeEstado(v.estado)}</td>
-      <td style="white-space:nowrap;display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="editarVenta(${v.id})" title="Editar">✎</button>
-        ${v.estado==='Pendiente'?`<button class="btn btn-success btn-sm" onclick="marcarPagada(${v.id})">Pagada</button>`:''}
-        ${v.estado==='Pendiente'?`<button class="btn btn-ghost btn-sm btn-icon" onclick="cambiarEstado(${v.id},'Cancelado')">✕</button>`:''}
-        ${currentUser?.role==='admin'
-          ? `<button class="btn btn-danger btn-sm btn-icon" onclick="eliminarVenta(${v.id},'${v.numero_factura}')" title="Eliminar venta">🗑</button>`
-          : ''}
+      <td class="td-mono">${escapeHtml(v.numero_factura||'—')}</td>
+
+      <td style="font-weight:500">
+        ${escapeHtml(v.cliente_nombre||'—')}
       </td>
-    </tr>`).join()||'<tr><td colspan="9" class="empty"><div class="empty-title">Sin ventas</div></td></tr>';
+
+      <td>
+        <span class="badge badge-blue">
+          ${escapeHtml(v.ciclo||'—')}
+        </span>
+      </td>
+
+      <td style="color:var(--ink3)">
+        ${fmtDate(v.fecha)}
+      </td>
+
+      <td>
+        ${escapeHtml(v.forma_pago||'—')}
+      </td>
+
+      <td class="td-mono" style="font-weight:600">
+        ${fmt(v.total)}
+      </td>
+
+      <td class="td-mono" style="color:var(--sage)">
+        ${fmt(v.ganancia)}
+      </td>
+
+      <td>
+        ${badgeEstado(v.estado)}
+      </td>
+
+      <td style="white-space:nowrap;display:flex;gap:4px">
+        <button
+          class="btn btn-ghost btn-sm btn-icon"
+          onclick="editarVenta(${v.id})"
+          title="Editar venta">
+          ✎
+        </button>
+
+        ${
+          String(v.estado||'').toLowerCase()==='pendiente'
+          ? `<button
+               class="btn btn-success btn-sm"
+               onclick="marcarPagada(${v.id})">
+               Pagada
+             </button>`
+          : ''
+        }
+
+        ${
+          String(v.estado||'').toLowerCase()==='pendiente'
+          ? `<button
+               class="btn btn-ghost btn-sm btn-icon"
+               onclick="cambiarEstado(${v.id},'Cancelado')"
+               title="Cancelar venta">
+               ✕
+             </button>`
+          : ''
+        }
+
+        ${
+          currentUser && String(currentUser.role||'').toLowerCase()==='admin'
+          ? `<button
+               class="btn btn-danger btn-sm btn-icon"
+               onclick="eliminarVenta(${v.id},'${String(v.numero_factura||'').replace(/'/g,"&#039;")}')"
+               title="Eliminar venta">
+               🗑
+             </button>`
+          : ''
+        }
+      </td>
+    </tr>
+  `).join('');
 }
 
 function filterVentas(el,estado){
-  ventasEstadoFiltro=estado;
-  document.querySelectorAll('#ventas-tabs .tab').forEach(t=>t.classList.remove('active'));
+  ventasEstadoFiltro=String(estado||'').trim();
+
+  document.querySelectorAll('#ventas-tabs .tab')
+    .forEach(t=>t.classList.remove('active'));
+
   el.classList.add('active');
-  loadVentas();
+
+  renderVentas();
 }
 async function marcarPagada(id){await cambiarEstado(id,'Pagado');}
 async function cambiarEstado(id,estado){
-  await fetch(`${API}/ventas/${id}/estado`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado})});
-  toast(`Venta marcada como ${estado}`);loadVentas();loadDashboard();
+  const response=await fetch(`${API}/ventas/${id}/estado`,{
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body:JSON.stringify({estado})
+  });
+
+  const result=await response.json().catch(()=>({}));
+
+  if(!response.ok || result.ok===false){
+    toast(result.error||'No se pudo cambiar el estado','error');
+    return;
+  }
+
+  toast(`Venta marcada como ${estado}`);
+  await loadVentas();
+  loadDashboard();
 }
 async function eliminarVenta(id,factura){
   if(!confirm(`¿Eliminar la venta ${factura}?`))return;
-  const r=await fetch(`${API}/ventas/${id}`,{method:'DELETE'}).then(r=>r.json());
-  if(r.ok){toast('Venta eliminada');loadVentas();loadDashboard();loadCiclos();}
-  else toast(r.error||'Error','error');
+  const response=await fetch(`${API}/ventas/${id}`,{
+    method:'DELETE',
+    credentials:'same-origin'
+  });
+
+  const r=await response.json().catch(()=>({}));
+
+  if(response.ok && r.ok){
+    toast('Venta eliminada');
+    await loadVentas();
+    loadDashboard();
+    loadCiclos();
+  }else{
+    toast(r.error||'No se pudo eliminar la venta','error');
+  }
 }
 async function editarVenta(id){
   const v=await fetch(`${API}/ventas/${id}`).then(r=>r.json());

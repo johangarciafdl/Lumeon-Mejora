@@ -70,6 +70,8 @@ def index():
         html = html.replace("</body>", '<script src="/sales_ui.js" defer></script></body>', 1)
     if 'src="/sales_ui_runtime_fix.js"' not in html:
         html = html.replace("</body>", '<script src="/sales_ui_runtime_fix.js" defer></script></body>', 1)
+    if 'src="/sales_ui_auth_sync.js"' not in html:
+        html = html.replace("</body>", '<script src="/sales_ui_auth_sync.js" defer></script></body>', 1)
     return html
 
 

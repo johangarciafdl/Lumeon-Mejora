@@ -4,27 +4,15 @@
   const MOBILE_QUERY = '(max-width: 768px)';
   let openState = false;
 
-  function sidebar() {
-    return document.getElementById('sidebar');
-  }
-
-  function button() {
-    return document.getElementById('mobile-menu-button');
-  }
-
-  function backdrop() {
-    return document.getElementById('mobile-menu-backdrop');
-  }
-
-  function isMobile() {
-    return window.matchMedia && window.matchMedia(MOBILE_QUERY).matches;
-  }
+  function sidebar() { return document.getElementById('sidebar'); }
+  function button() { return document.getElementById('mobile-menu-button'); }
+  function backdrop() { return document.getElementById('mobile-menu-backdrop'); }
+  function isMobile() { return window.matchMedia?.(MOBILE_QUERY).matches === true; }
 
   function applyState(open) {
     const s = sidebar();
     const b = backdrop();
     const btn = button();
-
     openState = !!open;
 
     if (!s) return;
@@ -47,7 +35,6 @@
     if (b) {
       b.classList.toggle('open', openState);
       b.setAttribute('aria-hidden', openState ? 'false' : 'true');
-
       if (isMobile() && openState) {
         b.style.display = 'block';
         b.style.opacity = '1';
@@ -61,26 +48,21 @@
       }
     }
 
-    if (btn) {
-      btn.setAttribute('aria-expanded', openState ? 'true' : 'false');
-    }
-
+    btn?.setAttribute('aria-expanded', openState ? 'true' : 'false');
     document.body.classList.toggle('mobile-menu-open', openState && isMobile());
     document.body.style.overflow = openState && isMobile() ? 'hidden' : '';
   }
 
   function toggle(event) {
     if (!isMobile()) return;
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    applyState(!openState);
+    event?.preventDefault();
+    event?.stopPropagation();
+    const s = sidebar();
+    if (!s) return;
+    applyState(!s.classList.contains('mobile-open'));
   }
 
-  function close() {
-    applyState(false);
-  }
+  function close() { applyState(false); }
 
   function ensure() {
     let btn = button();
@@ -114,34 +96,23 @@
       btn.style.touchAction = 'manipulation';
       btn.style.position = 'relative';
       btn.style.zIndex = '5001';
-      btn.addEventListener('click', toggle, true);
-      btn.addEventListener('pointerup', toggle, true);
-      btn.addEventListener('touchend', toggle, {capture:true, passive:false});
+      btn.addEventListener('click', toggle, false);
     }
 
     if (b && !b.dataset.lumeonMobileBound) {
       b.dataset.lumeonMobileBound = '1';
-      b.addEventListener('click', close, true);
-      b.addEventListener('touchend', close, {capture:true, passive:false});
+      b.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }, false);
     }
 
     applyState(openState);
   }
 
-  function delegate(event) {
-    if (!isMobile()) return;
-    const t = event.target?.closest?.('#mobile-menu-button');
-    if (!t) return;
-    if (event.type === 'touchstart') return;
-    toggle(event);
-  }
-
   function boot() {
     ensure();
-
-    document.addEventListener('click', delegate, true);
-    document.addEventListener('pointerup', delegate, true);
-    document.addEventListener('touchend', delegate, {capture:true, passive:false});
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') close();
@@ -150,10 +121,10 @@
     window.addEventListener('resize', () => {
       if (!isMobile()) close();
       else ensure();
-    }, {passive:true});
+    }, { passive: true });
 
     const observer = new MutationObserver(() => ensure());
-    observer.observe(document.body, {childList:true, subtree:true});
+    observer.observe(document.body, { childList: true, subtree: true });
     window.__lumeonMobileMenuObserver = observer;
 
     setTimeout(ensure, 100);
@@ -162,7 +133,7 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, {once:true});
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {
     boot();
   }

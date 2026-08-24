@@ -2,4 +2,4 @@
 cmds = ["python -m pip install -r lumeon_pro/requirements.txt"]
 
 [start]
-cmd = "python -m gunicorn --chdir lumeon_pro/backend app:app --bind 0.0.0.0:$PORT"
+cmd = "python -m gunicorn --chdir lumeon_pro/backend app_v2:app --bind 0.0.0.0:$PORT"

@@ -1902,5 +1902,356 @@ async function loadAdminVisibility(){
 })();
 </script>
 
+
+<script>
+/* LUMEON FINAL SALES ADMIN HOTFIX V1 */
+(function(){
+
+  let _sales = [];
+  let _salesFilter = "";
+
+  function _isAdmin(){
+    return String(
+      window.currentUser?.role ||
+      window.lumeonRole ||
+      "admin"
+    ).toLowerCase() === "admin";
+  }
+
+  function _safe(value){
+    return String(value ?? "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;")
+      .replace(/'/g,"&#039;");
+  }
+
+  function _renderSales(){
+    const tbody = document.querySelector("#tbl-ventas tbody");
+    if(!tbody) return;
+
+    const q = String(
+      document.getElementById("venta-search")?.value || ""
+    ).trim().toLowerCase();
+
+    let rows = _sales.filter(v => {
+      const estado = String(v.estado || "").trim().toLowerCase();
+      const filtro = String(_salesFilter || "").trim().toLowerCase();
+
+      const searchText = [
+        v.numero_factura,
+        v.cliente_nombre,
+        v.cliente_email,
+        v.cliente_telefono
+      ].join(" ").toLowerCase();
+
+      return (!filtro || estado === filtro)
+        && (!q || searchText.includes(q));
+    });
+
+    if(!rows.length){
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" class="empty">
+            <div class="empty-title">Sin ventas</div>
+            <div class="empty-text">No hay ventas para este filtro.</div>
+          </td>
+        </tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map(v => {
+
+      const estado = String(v.estado || "");
+      const pendiente = estado.toLowerCase() === "pendiente";
+
+      const deleteButton = `
+        <button
+          type="button"
+          class="btn btn-danger btn-sm btn-icon"
+          title="Eliminar venta"
+          onclick="_deleteSale(${Number(v.id)}, '${_safe(v.numero_factura)}')">
+          🗑
+        </button>
+      `;
+
+      const payButton = pendiente ? `
+        <button
+          type="button"
+          class="btn btn-success btn-sm"
+          onclick="_markPaid(${Number(v.id)})">
+          Pagada
+        </button>
+      ` : "";
+
+      const cancelButton = pendiente ? `
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-icon"
+          title="Cancelar"
+          onclick="_changeSaleState(${Number(v.id)}, 'Cancelado')">
+          ✕
+        </button>
+      ` : "";
+
+      return `
+        <tr>
+          <td class="td-mono">${_safe(v.numero_factura || "—")}</td>
+          <td style="font-weight:500">${_safe(v.cliente_nombre || "—")}</td>
+          <td>
+            <span class="badge badge-blue">
+              ${_safe(v.ciclo || "—")}
+            </span>
+          </td>
+          <td style="color:var(--ink3)">${fmtDate(v.fecha)}</td>
+          <td>${_safe(v.forma_pago || "—")}</td>
+          <td class="td-mono" style="font-weight:600">${fmt(v.total)}</td>
+          <td class="td-mono" style="color:var(--sage)">${fmt(v.ganancia)}</td>
+          <td>${badgeEstado(v.estado)}</td>
+          <td style="white-space:nowrap;display:flex;gap:4px;align-items:center">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-icon"
+              onclick="editarVenta(${Number(v.id)})"
+              title="Editar">
+              ✎
+            </button>
+            ${payButton}
+            ${cancelButton}
+            ${deleteButton}
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  async function _loadSales(){
+    try{
+      const r = await fetch("/api/ventas?limit=200", {
+        credentials:"same-origin"
+      });
+
+      const data = await r.json();
+
+      if(!r.ok){
+        throw new Error(data.error || "No se pudieron cargar las ventas");
+      }
+
+      _sales = Array.isArray(data)
+        ? data
+        : (Array.isArray(data.results) ? data.results : []);
+
+      _renderSales();
+
+    }catch(e){
+      console.error("Lumeon sales hotfix:", e);
+
+      const tbody = document.querySelector("#tbl-ventas tbody");
+      if(tbody){
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="empty">
+              <div class="empty-title">Error al cargar ventas</div>
+              <div class="empty-text">${_safe(e.message)}</div>
+            </td>
+          </tr>`;
+      }
+    }
+  }
+
+  window._filterSales = function(button, estado){
+    _salesFilter = String(estado || "");
+
+    document
+      .querySelectorAll("#ventas-tabs .tab")
+      .forEach(x => x.classList.remove("active"));
+
+    if(button){
+      button.classList.add("active");
+    }
+
+    _renderSales();
+  };
+
+  window._markPaid = async function(id){
+    await window._changeSaleState(id, "Pagado");
+  };
+
+  window._changeSaleState = async function(id, estado){
+    try{
+      const r = await fetch(`/api/ventas/${id}/estado`, {
+        method:"PATCH",
+        credentials:"same-origin",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({estado})
+      });
+
+      const data = await r.json().catch(()=>({}));
+
+      if(!r.ok || data.ok === false){
+        throw new Error(data.error || "No se pudo cambiar el estado");
+      }
+
+      if(typeof toast === "function"){
+        toast(`Venta marcada como ${estado}`);
+      }
+
+      await _loadSales();
+
+      if(typeof loadDashboard === "function"){
+        loadDashboard();
+      }
+
+    }catch(e){
+      console.error(e);
+      if(typeof toast === "function"){
+        toast(e.message || "Error","error");
+      }
+    }
+  };
+
+  window._deleteSale = async function(id, factura){
+    if(!confirm(`¿Eliminar la venta ${factura}?`)){
+      return;
+    }
+
+    try{
+      const r = await fetch(`/api/ventas/${id}`, {
+        method:"DELETE",
+        credentials:"same-origin"
+      });
+
+      const data = await r.json().catch(()=>({}));
+
+      if(!r.ok || data.ok === false){
+        throw new Error(data.error || "No se pudo eliminar la venta");
+      }
+
+      if(typeof toast === "function"){
+        toast("Venta eliminada");
+      }
+
+      await _loadSales();
+
+      if(typeof loadDashboard === "function"){
+        loadDashboard();
+      }
+
+      if(typeof loadCiclos === "function"){
+        loadCiclos();
+      }
+
+    }catch(e){
+      console.error(e);
+      if(typeof toast === "function"){
+        toast(e.message || "Error","error");
+      }
+    }
+  };
+
+  /*
+   * Forzamos los tabs para que no dependan de la implementación
+   * anterior de filterVentas().
+   */
+  function installSalesTabs(){
+    const tabs = document.querySelectorAll("#ventas-tabs .tab");
+
+    if(!tabs.length) return;
+
+    const values = ["", "Pendiente", "Pagado", "Cancelado"];
+
+    tabs.forEach((button, index) => {
+      button.onclick = function(){
+        window._filterSales(this, values[index] || "");
+      };
+    });
+  }
+
+  /*
+   * Forzamos el buscador.
+   */
+  function installSalesSearch(){
+    const search = document.getElementById("venta-search");
+
+    if(!search) return;
+
+    search.oninput = function(){
+      _renderSales();
+    };
+  }
+
+  /*
+   * REGISTROS:
+   * No dependemos de /auth/me para mostrar el menú.
+   * El backend continúa protegiendo /v2/admin/logs.
+   */
+  function installAdminLogs(){
+    const nav = document.getElementById("nav-registros");
+    const section = document.getElementById("admin-nav-section");
+
+    if(nav){
+      nav.style.display = "flex";
+    }
+
+    if(section){
+      section.style.display = "block";
+    }
+  }
+
+  window.goto = (function(original){
+    return function(page){
+
+      const result = original ? original(page) : undefined;
+
+      if(page === "ventas"){
+        setTimeout(()=>{
+          installSalesTabs();
+          installSalesSearch();
+          _loadSales();
+        },0);
+      }
+
+      if(page === "admin-logs"){
+        setTimeout(()=>{
+          installAdminLogs();
+
+          if(typeof loadAdminLogs === "function"){
+            loadAdminLogs();
+          }
+        },0);
+      }
+
+      return result;
+    };
+  })(window.goto);
+
+  function boot(){
+    installAdminLogs();
+
+    if(document.getElementById("page-ventas")){
+      installSalesTabs();
+      installSalesSearch();
+    }
+
+    /*
+     * Si ya estamos en ventas, cargar inmediatamente.
+     */
+    if(document.getElementById("page-ventas")?.classList.contains("active")){
+      _loadSales();
+    }
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", boot);
+  }else{
+    boot();
+  }
+
+})();
+</script>
+
 </body>
 </html>

@@ -2253,5 +2253,563 @@ async function loadAdminVisibility(){
 })();
 </script>
 
+
+<script>
+/* LUMEON SALES EDIT PAYMENT HOTFIX V2 */
+
+(function(){
+
+  function showEditMode(isEdit){
+    const ref = document.getElementById("vf-ref");
+    const addRow = ref ? ref.parentElement : null;
+    const itemsWrap = document.querySelector(".items-table-wrap");
+
+    if(addRow){
+      addRow.style.display = isEdit ? "none" : "flex";
+    }
+
+    if(itemsWrap){
+      itemsWrap.style.display = isEdit ? "none" : "block";
+    }
+
+    const title = document.querySelector("#modal-venta .modal-body > div:nth-of-type(3)");
+    if(title && isEdit){
+      title.style.display = "none";
+    }
+  }
+
+  function restoreNewSaleMode(){
+    const ref = document.getElementById("vf-ref");
+    const addRow = ref ? ref.parentElement : null;
+    const itemsWrap = document.querySelector(".items-table-wrap");
+
+    if(addRow){
+      addRow.style.display = "flex";
+    }
+
+    if(itemsWrap){
+      itemsWrap.style.display = "block";
+    }
+  }
+
+  window.editarVenta = async function(id){
+
+    try{
+
+      const response = await fetch(
+        `${API}/ventas/${id}`,
+        {credentials:"same-origin"}
+      );
+
+      const payload = await response.json();
+
+      if(!response.ok){
+        throw new Error(
+          payload.error || "No se pudo cargar la venta"
+        );
+      }
+
+      const v = payload.venta || payload;
+      const items = payload.items || [];
+
+      editVentaId = id;
+      ventaItems = items;
+
+      document.getElementById("mv-title").textContent =
+        "Editar Venta";
+
+      document.getElementById("btn-save-venta").textContent =
+        "Guardar cambios";
+
+      document.getElementById("vf-num").value =
+        v.numero_factura || "";
+
+      document.getElementById("vf-fecha").value =
+        v.fecha
+          ? String(v.fecha).split("T")[0]
+          : "";
+
+      document.getElementById("vf-ciclo").value =
+        v.ciclo || "";
+
+      document.getElementById("vf-ciclo-inicio").value =
+        v.fecha_inicio_ciclo || "";
+
+      document.getElementById("vf-ciclo-fin").value =
+        v.fecha_fin_ciclo || "";
+
+      document.getElementById("vf-email").value =
+        v.cliente_email || "";
+
+      document.getElementById("vf-tel").value =
+        v.cliente_telefono || "";
+
+      document.getElementById("vf-notas").value =
+        v.notas || "";
+
+      const clientes = await fetch(
+        `${API}/clientes`,
+        {credentials:"same-origin"}
+      ).then(r=>r.json());
+
+      const select = document.getElementById("vf-cliente");
+
+      select.innerHTML =
+        '<option value="">-- Sin cliente --</option>' +
+        clientes.map(c =>
+          `<option value="${c.id}">
+            ${escapeHtml(c.nombre)}
+          </option>`
+        ).join("");
+
+      if(v.cliente_id){
+        select.value = String(v.cliente_id);
+      }
+
+      document.getElementById("vf-pago").value =
+        v.forma_pago || "Contado";
+
+      document.getElementById("vf-estado").value =
+        v.estado || "Pendiente";
+
+      /*
+       * La edición NO modifica productos.
+       * Solamente fecha, cliente, pago, estado,
+       * notas y ciclo.
+       */
+      showEditMode(true);
+
+      openModal("modal-venta");
+
+    }catch(e){
+
+      console.error("editarVenta:", e);
+
+      if(typeof toast === "function"){
+        toast(
+          e.message || "No se pudo abrir la venta",
+          "error"
+        );
+      }
+    }
+  };
+
+
+  window.saveVenta = async function(){
+
+    /*
+     * EDICIÓN:
+     * no exige productos nuevos.
+     */
+    if(editVentaId){
+
+      const cl = document.getElementById("vf-cliente");
+      const cliente_id = cl.value || null;
+
+      let cliente_nombre = "";
+
+      if(
+        cl.selectedIndex >= 0 &&
+        cl.options[cl.selectedIndex]
+      ){
+        cliente_nombre =
+          cl.options[cl.selectedIndex].text;
+
+        if(
+          cliente_nombre === "-- Sin cliente --" ||
+          cliente_nombre === "-- Seleccionar --"
+        ){
+          cliente_nombre = "";
+        }
+      }
+
+      const body = {
+        cliente_id,
+        cliente_nombre,
+        cliente_email:
+          document.getElementById("vf-email").value.trim(),
+        cliente_telefono:
+          document.getElementById("vf-tel").value.trim(),
+        fecha:
+          document.getElementById("vf-fecha").value,
+        forma_pago:
+          document.getElementById("vf-pago").value,
+        estado:
+          document.getElementById("vf-estado").value,
+        notas:
+          document.getElementById("vf-notas").value,
+        ciclo:
+          document.getElementById("vf-ciclo").value.trim(),
+        fecha_inicio_ciclo:
+          document.getElementById("vf-ciclo-inicio").value,
+        fecha_fin_ciclo:
+          document.getElementById("vf-ciclo-fin").value
+      };
+
+      try{
+
+        const response = await fetch(
+          `${API}/ventas/${editVentaId}`,
+          {
+            method:"PUT",
+            credentials:"same-origin",
+            headers:{
+              "Content-Type":"application/json"
+            },
+            body:JSON.stringify(body)
+          }
+        );
+
+        const result = await response.json();
+
+        if(!response.ok || result.ok === false){
+          throw new Error(
+            result.error ||
+            "No se pudo actualizar la venta"
+          );
+        }
+
+        toast("Venta actualizada correctamente");
+
+        closeModal("modal-venta");
+
+        editVentaId = null;
+
+        restoreNewSaleMode();
+
+        await loadVentas();
+        loadDashboard();
+        loadCiclos();
+
+      }catch(e){
+
+        console.error("saveVenta edit:", e);
+
+        toast(
+          e.message || "Error al actualizar venta",
+          "error"
+        );
+      }
+
+      return;
+    }
+
+
+    /*
+     * NUEVA VENTA:
+     * aquí sí se requieren productos.
+     */
+    if(!ventaItems.length){
+      toast(
+        "Agrega al menos un producto",
+        "error"
+      );
+      return;
+    }
+
+    const cl = document.getElementById("vf-cliente");
+    const cliente_id = cl.value || null;
+
+    let cliente_nombre = cl.options[cl.selectedIndex]?.text || "";
+
+    if(
+      cliente_nombre === "-- Seleccionar --" ||
+      cliente_nombre === "-- Sin cliente --"
+    ){
+      cliente_nombre = "";
+    }
+
+    const body = {
+      numero_factura:
+        document.getElementById("vf-num").value.trim(),
+      cliente_id,
+      cliente_nombre,
+      cliente_email:
+        document.getElementById("vf-email").value.trim(),
+      cliente_telefono:
+        document.getElementById("vf-tel").value.trim(),
+      fecha:
+        document.getElementById("vf-fecha").value,
+      forma_pago:
+        document.getElementById("vf-pago").value,
+      estado:
+        document.getElementById("vf-estado").value,
+      notas:
+        document.getElementById("vf-notas").value,
+      ciclo:
+        document.getElementById("vf-ciclo").value.trim(),
+      fecha_inicio_ciclo:
+        document.getElementById("vf-ciclo-inicio").value,
+      fecha_fin_ciclo:
+        document.getElementById("vf-ciclo-fin").value,
+      items:ventaItems
+    };
+
+    try{
+
+      const response = await fetch(
+        `${API}/ventas`,
+        {
+          method:"POST",
+          credentials:"same-origin",
+          headers:{
+            "Content-Type":"application/json"
+          },
+          body:JSON.stringify(body)
+        }
+      );
+
+      const result = await response.json();
+
+      if(!response.ok || result.ok === false){
+        throw new Error(
+          result.error ||
+          "No se pudo crear la venta"
+        );
+      }
+
+      toast("Venta registrada correctamente");
+
+      closeModal("modal-venta");
+
+      loadVentas();
+      loadDashboard();
+      loadCiclos();
+
+    }catch(e){
+
+      console.error("saveVenta create:", e);
+
+      toast(
+        e.message || "Error al crear venta",
+        "error"
+      );
+    }
+  };
+
+
+  window.registrarAbono = async function(id, factura){
+
+    const montoTexto = prompt(
+      `¿Cuánto deseas abonar a la factura ${factura}?`
+    );
+
+    if(montoTexto === null){
+      return;
+    }
+
+    const monto = Number(
+      String(montoTexto).replace(",", ".")
+    );
+
+    if(!Number.isFinite(monto) || monto <= 0){
+      toast(
+        "Ingresa un monto de abono válido",
+        "error"
+      );
+      return;
+    }
+
+    try{
+
+      const response = await fetch(
+        `/api/ventas/${id}/abonos`,
+        {
+          method:"POST",
+          credentials:"same-origin",
+          headers:{
+            "Content-Type":"application/json"
+          },
+          body:JSON.stringify({
+            monto,
+            forma_pago:
+              document.getElementById("vf-pago")?.value ||
+              "Contado"
+          })
+        }
+      );
+
+      const result = await response.json();
+
+      if(!response.ok || result.ok === false){
+        throw new Error(
+          result.error ||
+          "No se pudo registrar el abono"
+        );
+      }
+
+      toast(
+        result.saldo_pendiente > 0
+          ? `Abono registrado. Saldo: ${fmt(result.saldo_pendiente)}`
+          : "Abono registrado. Venta pagada."
+      );
+
+      await loadVentas();
+      loadDashboard();
+      loadCiclos();
+
+    }catch(e){
+
+      console.error("registrarAbono:", e);
+
+      toast(
+        e.message || "Error al registrar el abono",
+        "error"
+      );
+    }
+  };
+
+
+  /*
+   * Añadir el botón Abono a las filas de ventas.
+   */
+  function addAbonoButtons(){
+
+    const tbody =
+      document.querySelector("#tbl-ventas tbody");
+
+    if(!tbody) return;
+
+    tbody.querySelectorAll("tr").forEach(row => {
+
+      const cells = row.querySelectorAll("td");
+
+      if(cells.length < 9) return;
+
+      const estado =
+        String(cells[7].textContent || "")
+          .trim()
+          .toLowerCase();
+
+      if(
+        estado !== "pendiente" &&
+        estado !== "abonado"
+      ){
+        return;
+      }
+
+      if(row.querySelector(".btn-abono")){
+        return;
+      }
+
+      /*
+       * Obtener id desde el botón eliminar.
+       */
+      const deleteButton =
+        Array.from(row.querySelectorAll("button"))
+          .find(b =>
+            (b.getAttribute("onclick") || "")
+              .includes("_deleteSale(")
+          );
+
+      if(!deleteButton) return;
+
+      const match =
+        (deleteButton.getAttribute("onclick") || "")
+          .match(/_deleteSale\((\d+)/);
+
+      if(!match) return;
+
+      const id = Number(match[1]);
+
+      const factura =
+        cells[0]?.textContent.trim() || "";
+
+      const button = document.createElement("button");
+
+      button.type = "button";
+      button.className =
+        "btn btn-gold btn-sm btn-abono";
+      button.textContent = "Abono";
+
+      button.title = "Registrar abono";
+
+      button.onclick = function(){
+        window.registrarAbono(id, factura);
+      };
+
+      deleteButton.parentElement.insertBefore(
+        button,
+        deleteButton
+      );
+    });
+  }
+
+
+  /*
+   * Observamos cambios de la tabla porque los tabs
+   * reconstruyen el tbody dinámicamente.
+   */
+  function observeSalesTable(){
+
+    const tbody =
+      document.querySelector("#tbl-ventas tbody");
+
+    if(!tbody || tbody.__abonoObserver){
+      return;
+    }
+
+    const observer =
+      new MutationObserver(addAbonoButtons);
+
+    observer.observe(
+      tbody,
+      {
+        childList:true,
+        subtree:true
+      }
+    );
+
+    tbody.__abonoObserver = observer;
+
+    addAbonoButtons();
+  }
+
+
+  /*
+   * Al entrar a ventas, activar observación.
+   */
+  const oldGoto = window.goto;
+
+  window.goto = function(page){
+
+    const result =
+      oldGoto ? oldGoto(page) : undefined;
+
+    if(page === "ventas"){
+
+      setTimeout(()=>{
+        observeSalesTable();
+        if(typeof loadVentas === "function"){
+          loadVentas();
+        }
+      },50);
+    }
+
+    return result;
+  };
+
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    function(){
+
+      observeSalesTable();
+
+      if(
+        document
+          .getElementById("page-ventas")
+          ?.classList.contains("active")
+      ){
+        setTimeout(()=>{
+          loadVentas();
+        },50);
+      }
+    }
+  );
+
+})();
+</script>
+
 </body>
 </html>

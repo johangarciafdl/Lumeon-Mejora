@@ -10,6 +10,7 @@ from services.authorization_service import require
 from services.customer_service import create_customer, search_customers
 from services.product_service import create_product, search_products
 from services.sale_service import SaleError, create_sale
+from services.audit_service import record as audit
 from services.sale_delete_service import SaleDeleteError, delete_sale
 from services.return_service import ReturnError, return_sale
 from services.sale_completion_service import deliver_sale_invoice
@@ -261,6 +262,500 @@ def crear_venta():
         return jsonify({"ok": False, "error": str(exc)}), 400
     except (AuthenticationError, PermissionError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+
+
+
+# LUMEON SALE UPDATE PAYMENT API V1
+
+@legacy_compat_api.put("/ventas/<int:sale_id>")
+def actualizar_venta(sale_id: int):
+    try:
+        a = actor("update_sale")
+        data = request.get_json(silent=True) or {}
+
+        conn = get_db()
+
+        try:
+            sale = conn.execute(
+                "SELECT * FROM ventas WHERE id=? LIMIT 1",
+                (sale_id,),
+            ).fetchone()
+
+            if not sale:
+                return jsonify({
+                    "ok": False,
+                    "error": "Venta no encontrada",
+                }), 404
+
+            allowed = {
+                "cliente_id",
+                "cliente_nombre",
+                "cliente_email",
+                "cliente_telefono",
+                "fecha",
+                "forma_pago",
+                "estado",
+                "notas",
+                "ciclo",
+                "fecha_inicio_ciclo",
+                "fecha_fin_ciclo",
+            }
+
+            updates = {
+                k: data[k]
+                for k in allowed
+                if k in data
+            }
+
+            if not updates:
+                return jsonify({
+                    "ok": False,
+                    "error": "No hay campos para actualizar",
+                }), 400
+
+            cliente_id = updates.get(
+                "cliente_id",
+                sale["cliente_id"],
+            )
+
+            cliente_nombre = updates.get(
+                "cliente_nombre",
+                sale["cliente_nombre"],
+            )
+
+            cliente_email = updates.get(
+                "cliente_email",
+                sale["cliente_email"],
+            )
+
+            cliente_telefono = updates.get(
+                "cliente_telefono",
+                sale["cliente_telefono"],
+            )
+
+            fecha = updates.get(
+                "fecha",
+                sale["fecha"],
+            )
+
+            forma_pago = updates.get(
+                "forma_pago",
+                sale["forma_pago"],
+            )
+
+            estado = str(
+                updates.get(
+                    "estado",
+                    sale["estado"],
+                )
+                or ""
+            ).strip()
+
+            notas = updates.get(
+                "notas",
+                sale["notas"],
+            )
+
+            ciclo = updates.get(
+                "ciclo",
+                sale["ciclo"],
+            )
+
+            fecha_inicio_ciclo = updates.get(
+                "fecha_inicio_ciclo",
+                sale["fecha_inicio_ciclo"],
+            )
+
+            fecha_fin_ciclo = updates.get(
+                "fecha_fin_ciclo",
+                sale["fecha_fin_ciclo"],
+            )
+
+            total = float(sale["total"] or 0)
+            total_abonado = float(
+                sale["total_abonado"] or 0
+            )
+
+            estado_pago = str(
+                sale["estado_pago"] or ""
+            ).strip()
+
+            saldo_pendiente = max(
+                total - total_abonado,
+                0,
+            )
+
+            if estado.lower() == "pagado":
+                total_abonado = total
+                saldo_pendiente = 0
+                estado_pago = "Pagado"
+
+            elif estado.lower() == "cancelado":
+                estado_pago = "Cancelado"
+
+            else:
+                if saldo_pendiente <= 0:
+                    estado_pago = "Pagado"
+                elif total_abonado > 0:
+                    estado_pago = "Abonado"
+                else:
+                    estado_pago = "Pendiente"
+
+            conn.execute(
+                """
+                UPDATE ventas
+                SET
+                    cliente_id=?,
+                    cliente_nombre=?,
+                    cliente_email=?,
+                    cliente_telefono=?,
+                    fecha=?,
+                    forma_pago=?,
+                    estado=?,
+                    estado_pago=?,
+                    total_abonado=?,
+                    saldo_pendiente=?,
+                    notas=?,
+                    ciclo=?,
+                    fecha_inicio_ciclo=?,
+                    fecha_fin_ciclo=?,
+                    num_ediciones=COALESCE(num_ediciones,0)+1
+                WHERE id=?
+                """,
+                (
+                    cliente_id,
+                    cliente_nombre,
+                    cliente_email,
+                    cliente_telefono,
+                    fecha,
+                    forma_pago,
+                    estado,
+                    estado_pago,
+                    total_abonado,
+                    saldo_pendiente,
+                    notas,
+                    ciclo,
+                    fecha_inicio_ciclo,
+                    fecha_fin_ciclo,
+                    sale_id,
+                ),
+            )
+
+            audit(
+                conn,
+                actor_id=int(a.id),
+                action="sale.updated",
+                entity="venta",
+                entity_id=sale_id,
+                details={
+                    "fields": sorted(updates.keys()),
+                    "estado": estado,
+                    "ciclo": ciclo,
+                    "fecha": fecha,
+                },
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": sale_id,
+                "estado": estado,
+                "estado_pago": estado_pago,
+                "total_abonado": total_abonado,
+                "saldo_pendiente": saldo_pendiente,
+            })
+
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 403
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc)[:500],
+        }), 400
+
+
+@legacy_compat_api.patch("/ventas/<int:sale_id>/estado")
+def cambiar_estado_venta(sale_id: int):
+    try:
+        a = actor("update_sale")
+        data = request.get_json(silent=True) or {}
+        estado = str(data.get("estado") or "").strip()
+
+        if estado not in {
+            "Pendiente",
+            "Pagado",
+            "Cancelado",
+        }:
+            return jsonify({
+                "ok": False,
+                "error": "Estado inválido",
+            }), 400
+
+        conn = get_db()
+
+        try:
+            sale = conn.execute(
+                "SELECT * FROM ventas WHERE id=? LIMIT 1",
+                (sale_id,),
+            ).fetchone()
+
+            if not sale:
+                return jsonify({
+                    "ok": False,
+                    "error": "Venta no encontrada",
+                }), 404
+
+            total = float(sale["total"] or 0)
+            total_abonado = float(
+                sale["total_abonado"] or 0
+            )
+
+            if estado == "Pagado":
+                total_abonado = total
+                saldo_pendiente = 0
+                estado_pago = "Pagado"
+
+            elif estado == "Cancelado":
+                saldo_pendiente = max(
+                    total - total_abonado,
+                    0,
+                )
+                estado_pago = "Cancelado"
+
+            else:
+                saldo_pendiente = max(
+                    total - total_abonado,
+                    0,
+                )
+                estado_pago = (
+                    "Pagado"
+                    if saldo_pendiente <= 0
+                    else (
+                        "Abonado"
+                        if total_abonado > 0
+                        else "Pendiente"
+                    )
+                )
+
+            conn.execute(
+                """
+                UPDATE ventas
+                SET
+                    estado=?,
+                    estado_pago=?,
+                    total_abonado=?,
+                    saldo_pendiente=?,
+                    num_ediciones=COALESCE(num_ediciones,0)+1
+                WHERE id=?
+                """,
+                (
+                    estado,
+                    estado_pago,
+                    total_abonado,
+                    saldo_pendiente,
+                    sale_id,
+                ),
+            )
+
+            audit(
+                conn,
+                actor_id=int(a.id),
+                action="sale.status_changed",
+                entity="venta",
+                entity_id=sale_id,
+                details={
+                    "estado": estado,
+                    "estado_pago": estado_pago,
+                    "total_abonado": total_abonado,
+                    "saldo_pendiente": saldo_pendiente,
+                },
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": sale_id,
+                "estado": estado,
+                "estado_pago": estado_pago,
+                "total_abonado": total_abonado,
+                "saldo_pendiente": saldo_pendiente,
+            })
+
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 403
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc)[:500],
+        }), 400
+
+
+@legacy_compat_api.post("/ventas/<int:sale_id>/abonos")
+def registrar_abono(sale_id: int):
+    try:
+        a = actor("record_payment")
+        data = request.get_json(silent=True) or {}
+
+        try:
+            monto = float(
+                data.get("monto")
+                if data.get("monto") is not None
+                else data.get("amount")
+            )
+        except (TypeError, ValueError):
+            return jsonify({
+                "ok": False,
+                "error": "Monto de abono inválido",
+            }), 400
+
+        if monto <= 0:
+            return jsonify({
+                "ok": False,
+                "error": "El abono debe ser mayor que cero",
+            }), 400
+
+        conn = get_db()
+
+        try:
+            sale = conn.execute(
+                "SELECT * FROM ventas WHERE id=? LIMIT 1",
+                (sale_id,),
+            ).fetchone()
+
+            if not sale:
+                return jsonify({
+                    "ok": False,
+                    "error": "Venta no encontrada",
+                }), 404
+
+            total = float(sale["total"] or 0)
+            anterior = float(
+                sale["total_abonado"] or 0
+            )
+            saldo_anterior = max(
+                total - anterior,
+                0,
+            )
+
+            if saldo_anterior <= 0:
+                return jsonify({
+                    "ok": False,
+                    "error": "La venta ya está totalmente pagada",
+                }), 400
+
+            if monto > saldo_anterior:
+                return jsonify({
+                    "ok": False,
+                    "error": (
+                        f"El abono no puede superar el saldo "
+                        f"pendiente de {saldo_anterior:.2f}"
+                    ),
+                }), 400
+
+            nuevo_abonado = anterior + monto
+            nuevo_saldo = max(
+                total - nuevo_abonado,
+                0,
+            )
+
+            nuevo_estado_pago = (
+                "Pagado"
+                if nuevo_saldo <= 0
+                else "Abonado"
+            )
+
+            nuevo_estado = (
+                "Pagado"
+                if nuevo_saldo <= 0
+                else str(sale["estado"] or "Pendiente")
+            )
+
+            forma_pago = data.get(
+                "forma_pago",
+                sale["forma_pago"],
+            )
+
+            conn.execute(
+                """
+                UPDATE ventas
+                SET
+                    total_abonado=?,
+                    saldo_pendiente=?,
+                    estado_pago=?,
+                    estado=?,
+                    forma_pago=?
+                WHERE id=?
+                """,
+                (
+                    nuevo_abonado,
+                    nuevo_saldo,
+                    nuevo_estado_pago,
+                    nuevo_estado,
+                    forma_pago,
+                    sale_id,
+                ),
+            )
+
+            audit(
+                conn,
+                actor_id=int(a.id),
+                action="sale.payment",
+                entity="venta",
+                entity_id=sale_id,
+                details={
+                    "monto": monto,
+                    "total_abonado_anterior": anterior,
+                    "total_abonado_nuevo": nuevo_abonado,
+                    "saldo_anterior": saldo_anterior,
+                    "saldo_nuevo": nuevo_saldo,
+                    "forma_pago": forma_pago,
+                },
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": sale_id,
+                "monto": monto,
+                "total_abonado": nuevo_abonado,
+                "saldo_pendiente": nuevo_saldo,
+                "estado_pago": nuevo_estado_pago,
+                "estado": nuevo_estado,
+            })
+
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 403
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc)[:500],
+        }), 400
 
 
 

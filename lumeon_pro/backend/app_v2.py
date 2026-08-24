@@ -82,11 +82,12 @@ def index():
             1,
         )
 
+    # sales_ui_runtime_fix_v2 is the single application boot loader. It loads
+    # the stable sales and navigation/mobile runtimes in sequence. CRUD is a
+    # separate runtime because it owns the product/customer action buttons.
     scripts = [
         '<script src="/assistant.js?v=20260824-2" defer></script>',
         '<script src="/sales_ui_runtime_fix_v2.js?v=20260824-4" defer></script>',
-        '<script src="/navigation_core.js?v=20260824-6" defer></script>',
-        '<script src="/mobile_menu_core.js?v=20260824-1" defer></script>',
         '<script src="/crud_ui_runtime.js?v=20260824-1" defer></script>',
     ]
 

@@ -28,8 +28,6 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
         if existing:
             return int(existing["id"])
 
-    # Re-read product data inside the same transaction that reserves stock.
-    # Never trust prices/stock supplied by the assistant or browser.
     normalized = []
     subtotal = 0.0
     profit = 0.0
@@ -47,7 +45,6 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
         aggregated[reference] = aggregated.get(reference, 0) + quantity
 
     try:
-        # The conditional UPDATE is the final concurrency guard.
         reserve_items(conn, [{"referencia": ref, "cantidad": qty} for ref, qty in aggregated.items()])
 
         for reference, quantity in aggregated.items():
@@ -63,16 +60,32 @@ def create_sale(conn, *, data: dict, user_id: int) -> int:
             profit += quantity * (sale_price - purchase_price)
             normalized.append((product, quantity, sale_price, purchase_price))
 
+        requested_state = str(data.get("estado", "Pendiente") or "Pendiente").strip()
+        if requested_state == "Pagado":
+            total_paid = subtotal
+            balance = 0
+            payment_state = "Pagado"
+        elif requested_state == "Cancelado":
+            total_paid = 0
+            balance = subtotal
+            payment_state = "Cancelado"
+        else:
+            total_paid = 0
+            balance = subtotal
+            requested_state = "Pendiente"
+            payment_state = "Pendiente"
+
         row = conn.execute(
             """INSERT INTO ventas
             (numero_factura,idempotency_key,cliente_id,cliente_nombre,cliente_email,cliente_telefono,
-             fecha,forma_pago,subtotal,total,ganancia,estado,notas,usuario_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
+             fecha,forma_pago,subtotal,total,ganancia,estado,estado_pago,total_abonado,saldo_pendiente,notas,usuario_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
             (
                 numero_factura, idempotency_key, data.get("cliente_id"), data.get("cliente_nombre", ""),
                 data.get("cliente_email", ""), data.get("cliente_telefono", ""),
                 data.get("fecha", datetime.now().isoformat()), data.get("forma_pago", "Contado"),
-                subtotal, subtotal, profit, data.get("estado", "Pendiente"), data.get("notas", ""), user_id,
+                subtotal, subtotal, profit, requested_state, payment_state, total_paid, balance,
+                data.get("notas", ""), user_id,
             ),
         ).fetchone()
         sale_id = int(row["id"])

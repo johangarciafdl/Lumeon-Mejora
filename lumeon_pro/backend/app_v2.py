@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import dotenv
@@ -63,6 +64,17 @@ def index():
     path = Path(app.static_folder) / "index.html"
     html = path.read_text(encoding="utf-8")
 
+    # The original index contains an older inline mobile controller. V2 owns
+    # mobile navigation through mobile_menu_core.js, so strip the legacy
+    # controller before sending the page to the browser.
+    html = re.sub(
+        r'<script>\s*/\* LUMEON MOBILE APP CONTROLS \*/.*?</script>\s*',
+        '',
+        html,
+        count=1,
+        flags=re.S,
+    )
+
     if 'href="/assistant.css' not in html:
         html = html.replace(
             "</head>",
@@ -70,12 +82,13 @@ def index():
             1,
         )
 
-    # Frontend boot contract: assistant is isolated; the application runtime
-    # loads Ventas, navigation, and the dedicated mobile menu controller.
+    # sales_ui_runtime_fix_v2 is the single application boot loader. It loads
+    # the stable sales and navigation/mobile runtimes in sequence. CRUD is a
+    # separate runtime because it owns the product/customer action buttons.
     scripts = [
         '<script src="/assistant.js?v=20260824-2" defer></script>',
         '<script src="/sales_ui_runtime_fix_v2.js?v=20260824-4" defer></script>',
-        '<script src="/mobile_menu_core.js?v=20260824-1" defer></script>',
+        '<script src="/crud_ui_runtime.js?v=20260824-1" defer></script>',
     ]
 
     for script in scripts:

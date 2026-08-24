@@ -2,22 +2,13 @@
   'use strict';
 
   const pages = [
-    'dashboard',
-    'inventario',
-    'ventas',
-    'clientes',
-    'ciclos',
-    'devoluciones',
-    'admin-logs',
+    'dashboard', 'inventario', 'ventas', 'clientes',
+    'ciclos', 'devoluciones', 'admin-logs',
   ];
 
   const titles = {
-    dashboard: 'Dashboard',
-    inventario: 'Inventario',
-    ventas: 'Ventas',
-    clientes: 'Clientes',
-    ciclos: 'Ciclos',
-    devoluciones: 'Devoluciones',
+    dashboard: 'Dashboard', inventario: 'Inventario', ventas: 'Ventas',
+    clientes: 'Clientes', ciclos: 'Ciclos', devoluciones: 'Devoluciones',
     'admin-logs': 'Registros',
   };
 
@@ -36,42 +27,32 @@
     document.body.style.overflow = '';
   }
 
-  function pageElement(page) {
-    return document.getElementById(`page-${page}`);
-  }
-
   function extractPage(item) {
     const direct = item?.dataset?.page;
     if (direct && pages.includes(direct)) return direct;
-
     const onclick = item?.getAttribute('onclick') || '';
-    const match = onclick.match(/goto\((?:'|")([^'"]+)(?:'|")\)/);
+    const match = onclick.match(/goto\((?:'|\")([^'\"]+)(?:'|\")\)/);
     return match?.[1] || '';
   }
 
   function setActiveNav(page) {
     document.querySelectorAll('#sidebar .nav-item').forEach((item) => {
       item.classList.toggle('active', extractPage(item) === page);
-      if (page === 'admin-logs' && item.id === 'nav-registros') {
-        item.classList.add('active');
-      }
+      if (page === 'admin-logs' && item.id === 'nav-registros') item.classList.add('active');
     });
   }
 
   function setTopbar(page) {
     const title = document.getElementById('topbar-title');
     if (title) title.textContent = titles[page] || 'Lumeon';
-
     const action = document.getElementById('topbar-action');
     if (!action) return;
-
     const spec = topActions[page];
     if (!spec) {
       action.style.display = 'none';
       action.onclick = null;
       return;
     }
-
     action.textContent = spec[0];
     action.style.display = 'flex';
     action.type = 'button';
@@ -86,52 +67,39 @@
 
   function loadPageData(page) {
     const loaders = {
-      dashboard: 'loadDashboard',
-      inventario: 'loadInventario',
-      ventas: 'loadVentas',
-      clientes: 'loadClientes',
-      ciclos: 'loadCiclos',
-      devoluciones: 'loadDevoluciones',
+      dashboard: 'loadDashboard', inventario: 'loadInventario', ventas: 'loadVentas',
+      clientes: 'loadClientes', ciclos: 'loadCiclos', devoluciones: 'loadDevoluciones',
       'admin-logs': 'loadAdminLogs',
     };
-
-    const fn = window[loaders[page]];
-    if (typeof fn !== 'function') return;
-
+    const fnName = loaders[page];
+    const fn = window[fnName];
+    if (typeof fn !== 'function') {
+      console.warn(`Lumeon: falta loader ${fnName || page}`);
+      return;
+    }
     Promise.resolve(fn()).catch((error) => {
       console.error(`Lumeon ${page} loader failed`, error);
       if (typeof window.toast === 'function') {
-        window.toast(
-          error?.message || `No se pudo cargar ${titles[page] || page}`,
-          'error',
-        );
+        window.toast(error?.message || `No se pudo cargar ${titles[page] || page}`, 'error');
       }
     });
   }
 
   function navigate(page) {
     if (!pages.includes(page)) return false;
-
-    const target = pageElement(page);
+    const target = document.getElementById(`page-${page}`);
     if (!target) return false;
 
     document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
     target.classList.add('active');
-
     window.currentPage = page;
     setActiveNav(page);
     setTopbar(page);
     closeMobileMenu();
 
-    try {
-      window.scrollTo({ top: 0, behavior: 'auto' });
-    } catch {
-      window.scrollTo(0, 0);
-    }
-
+    try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch { window.scrollTo(0, 0); }
     const content = document.getElementById('content');
     if (content) content.scrollTop = 0;
-
     loadPageData(page);
     return true;
   }
@@ -142,25 +110,37 @@
       if (!pages.includes(page)) return;
 
       item.dataset.page = page;
+      // El HTML heredado trae onclick="goto(...)". Lo quitamos para que
+      // exista un único propietario de la navegación.
+      item.removeAttribute('onclick');
 
       if (item.dataset.lumeonNavBound === '1') return;
       item.dataset.lumeonNavBound = '1';
-
+      item.setAttribute('role', 'button');
+      item.setAttribute('tabindex', '0');
       item.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         navigate(page);
       }, false);
+      item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          navigate(page);
+        }
+      });
     });
   }
 
   function bindAdminLogs() {
     const item = document.getElementById('nav-registros');
-    if (!item || item.dataset.lumeonLogsBound === '1') return;
-
-    item.dataset.lumeonLogsBound = '1';
+    if (!item) return;
     item.dataset.page = 'admin-logs';
-
+    item.removeAttribute('onclick');
+    if (item.dataset.lumeonLogsBound === '1') return;
+    item.dataset.lumeonLogsBound = '1';
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
     item.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -178,22 +158,11 @@
     expose();
     bindNavItems();
     bindAdminLogs();
-
     const active = document.querySelector('.page.active');
-    const page = active?.id?.startsWith('page-')
-      ? active.id.slice(5)
-      : 'dashboard';
-
+    const page = active?.id?.startsWith('page-') ? active.id.slice(5) : 'dashboard';
     window.currentPage = page;
     setActiveNav(page);
     setTopbar(page);
-
-    setTimeout(() => {
-      expose();
-      bindNavItems();
-      bindAdminLogs();
-      setActiveNav(window.currentPage || page);
-    }, 1000);
   }
 
   if (document.readyState === 'loading') {

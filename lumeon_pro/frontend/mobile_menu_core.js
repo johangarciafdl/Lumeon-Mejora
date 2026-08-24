@@ -14,7 +14,6 @@
     const b = backdrop();
     const btn = button();
     openState = !!open;
-
     if (!s) return;
 
     s.classList.toggle('mobile-open', openState);
@@ -63,6 +62,12 @@
   }
 
   function close() { applyState(false); }
+  function open() { applyState(true); }
+
+  // Public API used by navigation_core. There is now exactly one source of
+  // truth for the menu's open/closed state.
+  window.openMobileMenu = open;
+  window.closeMobileMenu = close;
 
   function ensure() {
     let btn = button();
@@ -113,11 +118,9 @@
 
   function boot() {
     ensure();
-
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') close();
     });
-
     window.addEventListener('resize', () => {
       if (!isMobile()) close();
       else ensure();

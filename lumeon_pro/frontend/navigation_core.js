@@ -40,11 +40,13 @@
 
   function setActiveNav(page) {
     document.querySelectorAll('#sidebar .nav-item').forEach((item) => {
-      item.classList.remove('active');
       const onclick = item.getAttribute('onclick') || '';
       const match = onclick.match(/goto\((?:'|\")([^'\"]+)(?:'|\")\)/);
-      if (match && match[1] === page) item.classList.add('active');
-      if (page === 'admin-logs' && item.id === 'nav-registros') item.classList.add('active');
+      const itemPage = match?.[1];
+      item.classList.toggle('active', itemPage === page);
+      if (page === 'admin-logs' && item.id === 'nav-registros') {
+        item.classList.add('active');
+      }
     });
   }
 
@@ -53,9 +55,9 @@
     if (title) title.textContent = titles[page] || 'Lumeon';
 
     const action = document.getElementById('topbar-action');
-    const spec = topActions[page];
     if (!action) return;
 
+    const spec = topActions[page];
     if (!spec) {
       action.style.display = 'none';
       action.onclick = null;
@@ -70,6 +72,7 @@
       event.stopPropagation();
       const fn = window[spec[1]];
       if (typeof fn === 'function') fn();
+      else console.error(`Lumeon: no existe ${spec[1]}`);
     };
   }
 
@@ -88,12 +91,18 @@
     if (!fnName) return;
 
     const fn = window[fnName];
-    if (typeof fn !== 'function') return;
+    if (typeof fn !== 'function') {
+      console.warn(`Lumeon: falta loader ${fnName}`);
+      return;
+    }
 
     Promise.resolve(fn()).catch((error) => {
       console.error(`Lumeon ${page} loader failed`, error);
       if (typeof window.toast === 'function') {
-        window.toast(error?.message || `No se pudo cargar ${titles[page] || page}`, 'error');
+        window.toast(
+          error?.message || `No se pudo cargar ${titles[page] || page}`,
+          'error',
+        );
       }
     });
   }
@@ -112,43 +121,15 @@
     setTopbar(page);
     closeMobileMenu();
 
+    window.scrollTo({ top: 0, behavior: 'auto' });
     const content = document.getElementById('content');
     if (content) content.scrollTop = 0;
-    window.scrollTo({ top: 0, behavior: 'instant' });
 
     loadPageData(page);
     return true;
   }
 
-  function bindNavItems() {
-    document.querySelectorAll('#sidebar .nav-item').forEach((item) => {
-      const onclick = item.getAttribute('onclick') || '';
-      const match = onclick.match(/goto\((?:'|\")([^'\"]+)(?:'|\")\)/);
-      const page = match?.[1];
-
-      if (!page || !pages.includes(page)) return;
-
-      item.removeAttribute('onclick');
-      item.type = 'button';
-      item.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate(page);
-      });
-    });
-
-    const logs = document.getElementById('nav-registros');
-    if (logs) {
-      logs.removeAttribute('onclick');
-      logs.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate('admin-logs');
-      });
-    }
-  }
-
-  function ensureMobileMenu() {
+  function bindMobileMenu() {
     let button = document.getElementById('mobile-menu-button');
     let backdrop = document.getElementById('mobile-menu-backdrop');
 
@@ -194,24 +175,16 @@
 
   function start() {
     expose();
-    bindNavItems();
-    ensureMobileMenu();
+    bindMobileMenu();
 
     const active = document.querySelector('.page.active');
     const page = active?.id?.startsWith('page-')
       ? active.id.slice(5)
       : 'dashboard';
 
+    window.currentPage = page;
     setActiveNav(page);
     setTopbar(page);
-
-    // Rebind once more after the other frontend runtimes finish booting.
-    setTimeout(() => {
-      expose();
-      bindNavItems();
-      ensureMobileMenu();
-      setActiveNav(window.currentPage || page);
-    }, 1000);
   }
 
   if (document.readyState === 'loading') {

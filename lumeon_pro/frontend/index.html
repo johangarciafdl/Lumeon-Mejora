@@ -925,7 +925,19 @@ async function checkAuth(){
     const resp=await fetch(`${API}/v2/auth/me`,{credentials:'same-origin'});
     const data=await resp.json();
     if(data.ok&&data.authenticated){
-      currentUser={username:String(data.user_id||'admin'),role:data.role,user_id:data.user_id};
+      currentUser={
+        username:String(data.username || data.user?.username || data.user_id || 'admin'),
+        role:String(data.role || data.user?.role || '').toLowerCase(),
+        user_id:data.user_id
+      };
+
+      if(currentUser.role==='admin'){
+        window.lumeonIsAdmin=true;
+        document.querySelectorAll('.admin-only-nav').forEach(el=>{
+          el.style.display='';
+        });
+      }
+
       document.getElementById('modal-login').classList.remove('open');
       document.getElementById('sb-username').textContent=currentUser.username;
       document.getElementById('sb-avatar').textContent=currentUser.username[0].toUpperCase();
@@ -946,7 +958,19 @@ async function doLogin(){
   const resp=await fetch(`${API}/v2/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:user,password:pass})});
   const data=await resp.json();
   if(data.ok){
-    currentUser={username:user,role:data.role,user_id:data.user_id};
+    currentUser={
+      username:user,
+      role:String(data.role || '').toLowerCase(),
+      user_id:data.user_id
+    };
+
+    if(currentUser.role==='admin'){
+      window.lumeonIsAdmin=true;
+      document.querySelectorAll('.admin-only-nav').forEach(el=>{
+        el.style.display='';
+      });
+    }
+
     document.getElementById('sb-username').textContent=user;
     document.getElementById('sb-avatar').textContent=user[0].toUpperCase();
     anime({targets:'#modal-login',opacity:[1,0],duration:400,easing:'easeInCubic',complete:()=>{document.getElementById('modal-login').classList.remove('open');document.getElementById('login-user').value='';document.getElementById('login-pass').value='';}});
@@ -976,7 +1000,15 @@ function goto(page){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById(`page-${page}`).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>{if(n.textContent.trim().toLowerCase().startsWith(page.toLowerCase()))n.classList.add('active')});
-  const titles={dashboard:'Dashboard',inventario:'Inventario',ventas:'Ventas',clientes:'Clientes',ciclos:'Ciclos',devoluciones:'Devoluciones'};
+  const titles={
+    dashboard:'Dashboard',
+    inventario:'Inventario',
+    ventas:'Ventas',
+    clientes:'Clientes',
+    ciclos:'Ciclos',
+    devoluciones:'Devoluciones',
+    'admin-logs':'Registros'
+  };
   document.getElementById('topbar-title').textContent=titles[page];
   currentPage=page;
   const btn=document.getElementById('topbar-action');
@@ -1081,7 +1113,9 @@ async function loadVentas(){
         <button class="btn btn-ghost btn-sm btn-icon" onclick="editarVenta(${v.id})" title="Editar">✎</button>
         ${v.estado==='Pendiente'?`<button class="btn btn-success btn-sm" onclick="marcarPagada(${v.id})">Pagada</button>`:''}
         ${v.estado==='Pendiente'?`<button class="btn btn-ghost btn-sm btn-icon" onclick="cambiarEstado(${v.id},'Cancelado')">✕</button>`:''}
-        <button class="btn btn-danger btn-sm btn-icon" onclick="eliminarVenta(${v.id},'${v.numero_factura}')">🗑</button>
+        ${currentUser?.role==='admin'
+          ? `<button class="btn btn-danger btn-sm btn-icon" onclick="eliminarVenta(${v.id},'${v.numero_factura}')" title="Eliminar venta">🗑</button>`
+          : ''}
       </td>
     </tr>`).join()||'<tr><td colspan="9" class="empty"><div class="empty-title">Sin ventas</div></td></tr>';
 }
@@ -1577,7 +1611,7 @@ function escapeHtml(value){
 async function loadAdminVisibility(){
   try{
     const response = await fetch(
-      `${API}/auth/me`,
+      `${API}/v2/auth/me`,
       {credentials:'same-origin'}
     );
 

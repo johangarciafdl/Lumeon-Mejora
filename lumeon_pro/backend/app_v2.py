@@ -70,12 +70,12 @@ def index():
             1,
         )
 
-    # Frontend boot contract: assistant remains isolated, and navigation/runtime
-    # is loaded by the single sales runtime loader. Do not inject the legacy
-    # sales runtimes independently; they were overriding shared globals.
+    # Frontend boot contract: assistant is isolated; the application runtime
+    # loads Ventas, navigation, and the dedicated mobile menu controller.
     scripts = [
         '<script src="/assistant.js?v=20260824-2" defer></script>',
         '<script src="/sales_ui_runtime_fix_v2.js?v=20260824-4" defer></script>',
+        '<script src="/mobile_menu_core.js?v=20260824-1" defer></script>',
     ]
 
     for script in scripts:

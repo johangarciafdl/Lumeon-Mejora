@@ -62,18 +62,27 @@ def security_headers(response):
 def index():
     path = Path(app.static_folder) / "index.html"
     html = path.read_text(encoding="utf-8")
-    if 'href="/assistant.css"' not in html:
-        html = html.replace("</head>", '<link rel="stylesheet" href="/assistant.css"></head>', 1)
-    if 'src="/assistant.js"' not in html:
-        html = html.replace("</body>", '<script src="/assistant.js" defer></script></body>', 1)
-    if 'src="/sales_ui.js"' not in html:
-        html = html.replace("</body>", '<script src="/sales_ui.js" defer></script></body>', 1)
-    if 'src="/sales_ui_runtime_fix.js"' not in html:
-        html = html.replace("</body>", '<script src="/sales_ui_runtime_fix.js" defer></script></body>', 1)
-    if 'src="/sales_ui_auth_sync.js"' not in html:
-        html = html.replace("</body>", '<script src="/sales_ui_auth_sync.js" defer></script></body>', 1)
-    if 'src="/sales_ui_runtime_fix_v2.js"' not in html:
-        html = html.replace("</body>", '<script src="/sales_ui_runtime_fix_v2.js" defer></script></body>', 1)
+
+    if 'href="/assistant.css' not in html:
+        html = html.replace(
+            "</head>",
+            '<link rel="stylesheet" href="/assistant.css?v=20260824-2"></head>',
+            1,
+        )
+
+    # Frontend boot contract: assistant remains isolated, and navigation/runtime
+    # is loaded by the single sales runtime loader. Do not inject the legacy
+    # sales runtimes independently; they were overriding shared globals.
+    scripts = [
+        '<script src="/assistant.js?v=20260824-2" defer></script>',
+        '<script src="/sales_ui_runtime_fix_v2.js?v=20260824-4" defer></script>',
+    ]
+
+    for script in scripts:
+        src = script.split('src="', 1)[1].split('"', 1)[0].split('?', 1)[0]
+        if f'src="{src}' not in html:
+            html = html.replace("</body>", script + "</body>", 1)
+
     return html
 
 

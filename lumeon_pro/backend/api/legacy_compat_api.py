@@ -267,7 +267,60 @@ def crear_venta():
 
 
 
-# LUMEON SALE UPDATE PAYMENT API V1
+
+# LUMEON SALES MANAGEMENT V2
+
+def _ensure_sale_payments_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS venta_abonos (
+            id INTEGER,
+            venta_id INTEGER NOT NULL,
+            monto NUMERIC(12,2) NOT NULL,
+            forma_pago TEXT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            usuario_id INTEGER,
+            nota TEXT
+        )
+    """)
+
+
+def _sale_payment_state(total, total_abonado, requested_state):
+    total = float(total or 0)
+    total_abonado = float(total_abonado or 0)
+
+    saldo = max(total - total_abonado, 0)
+
+    requested = str(requested_state or "").strip()
+
+    if requested == "Pagado":
+        total_abonado = total
+        saldo = 0
+        estado = "Pagado"
+        estado_pago = "Pagado"
+
+    elif requested == "Cancelado":
+        estado = "Cancelado"
+        estado_pago = "Cancelado"
+
+    elif saldo <= 0:
+        estado = "Pagado"
+        estado_pago = "Pagado"
+
+    elif total_abonado > 0:
+        estado = "Pendiente"
+        estado_pago = "Abonado"
+
+    else:
+        estado = "Pendiente"
+        estado_pago = "Pendiente"
+
+    return (
+        estado,
+        estado_pago,
+        total_abonado,
+        saldo,
+    )
+
 
 @legacy_compat_api.put("/ventas/<int:sale_id>")
 def actualizar_venta(sale_id: int):
@@ -304,104 +357,36 @@ def actualizar_venta(sale_id: int):
             }
 
             updates = {
-                k: data[k]
-                for k in allowed
-                if k in data
+                key: data[key]
+                for key in allowed
+                if key in data
             }
 
             if not updates:
                 return jsonify({
                     "ok": False,
-                    "error": "No hay campos para actualizar",
+                    "error": "No hay cambios para guardar",
                 }), 400
 
-            cliente_id = updates.get(
-                "cliente_id",
-                sale["cliente_id"],
+            estado_requested = updates.get(
+                "estado",
+                sale["estado"],
             )
 
-            cliente_nombre = updates.get(
-                "cliente_nombre",
-                sale["cliente_nombre"],
-            )
-
-            cliente_email = updates.get(
-                "cliente_email",
-                sale["cliente_email"],
-            )
-
-            cliente_telefono = updates.get(
-                "cliente_telefono",
-                sale["cliente_telefono"],
-            )
-
-            fecha = updates.get(
-                "fecha",
-                sale["fecha"],
-            )
-
-            forma_pago = updates.get(
-                "forma_pago",
-                sale["forma_pago"],
-            )
-
-            estado = str(
-                updates.get(
-                    "estado",
-                    sale["estado"],
-                )
-                or ""
-            ).strip()
-
-            notas = updates.get(
-                "notas",
-                sale["notas"],
-            )
-
-            ciclo = updates.get(
-                "ciclo",
-                sale["ciclo"],
-            )
-
-            fecha_inicio_ciclo = updates.get(
-                "fecha_inicio_ciclo",
-                sale["fecha_inicio_ciclo"],
-            )
-
-            fecha_fin_ciclo = updates.get(
-                "fecha_fin_ciclo",
-                sale["fecha_fin_ciclo"],
-            )
-
-            total = float(sale["total"] or 0)
             total_abonado = float(
                 sale["total_abonado"] or 0
             )
 
-            estado_pago = str(
-                sale["estado_pago"] or ""
-            ).strip()
-
-            saldo_pendiente = max(
-                total - total_abonado,
-                0,
+            (
+                estado,
+                estado_pago,
+                total_abonado,
+                saldo_pendiente,
+            ) = _sale_payment_state(
+                sale["total"],
+                total_abonado,
+                estado_requested,
             )
-
-            if estado.lower() == "pagado":
-                total_abonado = total
-                saldo_pendiente = 0
-                estado_pago = "Pagado"
-
-            elif estado.lower() == "cancelado":
-                estado_pago = "Cancelado"
-
-            else:
-                if saldo_pendiente <= 0:
-                    estado_pago = "Pagado"
-                elif total_abonado > 0:
-                    estado_pago = "Abonado"
-                else:
-                    estado_pago = "Pendiente"
 
             conn.execute(
                 """
@@ -425,20 +410,50 @@ def actualizar_venta(sale_id: int):
                 WHERE id=?
                 """,
                 (
-                    cliente_id,
-                    cliente_nombre,
-                    cliente_email,
-                    cliente_telefono,
-                    fecha,
-                    forma_pago,
+                    updates.get(
+                        "cliente_id",
+                        sale["cliente_id"],
+                    ),
+                    updates.get(
+                        "cliente_nombre",
+                        sale["cliente_nombre"],
+                    ),
+                    updates.get(
+                        "cliente_email",
+                        sale["cliente_email"],
+                    ),
+                    updates.get(
+                        "cliente_telefono",
+                        sale["cliente_telefono"],
+                    ),
+                    updates.get(
+                        "fecha",
+                        sale["fecha"],
+                    ),
+                    updates.get(
+                        "forma_pago",
+                        sale["forma_pago"],
+                    ),
                     estado,
                     estado_pago,
                     total_abonado,
                     saldo_pendiente,
-                    notas,
-                    ciclo,
-                    fecha_inicio_ciclo,
-                    fecha_fin_ciclo,
+                    updates.get(
+                        "notas",
+                        sale["notas"],
+                    ),
+                    updates.get(
+                        "ciclo",
+                        sale["ciclo"],
+                    ),
+                    updates.get(
+                        "fecha_inicio_ciclo",
+                        sale["fecha_inicio_ciclo"],
+                    ),
+                    updates.get(
+                        "fecha_fin_ciclo",
+                        sale["fecha_fin_ciclo"],
+                    ),
                     sale_id,
                 ),
             )
@@ -452,8 +467,15 @@ def actualizar_venta(sale_id: int):
                 details={
                     "fields": sorted(updates.keys()),
                     "estado": estado,
-                    "ciclo": ciclo,
-                    "fecha": fecha,
+                    "estado_pago": estado_pago,
+                    "ciclo": updates.get(
+                        "ciclo",
+                        sale["ciclo"],
+                    ),
+                    "fecha": updates.get(
+                        "fecha",
+                        sale["fecha"],
+                    ),
                 },
             )
 
@@ -489,9 +511,12 @@ def cambiar_estado_venta(sale_id: int):
     try:
         a = actor("update_sale")
         data = request.get_json(silent=True) or {}
-        estado = str(data.get("estado") or "").strip()
 
-        if estado not in {
+        estado_requested = str(
+            data.get("estado") or ""
+        ).strip()
+
+        if estado_requested not in {
             "Pendiente",
             "Pagado",
             "Cancelado",
@@ -515,37 +540,56 @@ def cambiar_estado_venta(sale_id: int):
                     "error": "Venta no encontrada",
                 }), 404
 
-            total = float(sale["total"] or 0)
-            total_abonado = float(
+            previous_paid = float(
                 sale["total_abonado"] or 0
             )
 
-            if estado == "Pagado":
-                total_abonado = total
-                saldo_pendiente = 0
-                estado_pago = "Pagado"
+            remaining = max(
+                float(sale["total"] or 0) - previous_paid,
+                0,
+            )
 
-            elif estado == "Cancelado":
-                saldo_pendiente = max(
-                    total - total_abonado,
-                    0,
-                )
-                estado_pago = "Cancelado"
+            # Al marcar Pagado, si había saldo pendiente,
+            # registramos automáticamente ese pago final.
+            if (
+                estado_requested == "Pagado"
+                and remaining > 0
+            ):
+                _ensure_sale_payments_table(conn)
 
-            else:
-                saldo_pendiente = max(
-                    total - total_abonado,
-                    0,
+                max_id = conn.execute(
+                    "SELECT COALESCE(MAX(id),0)+1 FROM venta_abonos"
+                ).fetchone()[0]
+
+                conn.execute(
+                    """
+                    INSERT INTO venta_abonos
+                        (id, venta_id, monto, forma_pago,
+                         usuario_id, nota)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(max_id),
+                        sale_id,
+                        remaining,
+                        sale["forma_pago"],
+                        int(a.id),
+                        "Pago total manual",
+                    ),
                 )
-                estado_pago = (
-                    "Pagado"
-                    if saldo_pendiente <= 0
-                    else (
-                        "Abonado"
-                        if total_abonado > 0
-                        else "Pendiente"
-                    )
-                )
+
+                previous_paid += remaining
+
+            (
+                estado,
+                estado_pago,
+                total_abonado,
+                saldo_pendiente,
+            ) = _sale_payment_state(
+                sale["total"],
+                previous_paid,
+                estado_requested,
+            )
 
             conn.execute(
                 """
@@ -608,6 +652,83 @@ def cambiar_estado_venta(sale_id: int):
         }), 400
 
 
+@legacy_compat_api.get("/ventas/<int:sale_id>/abonos")
+def listar_abonos(sale_id: int):
+    try:
+        actor("read_sale")
+
+        conn = get_db()
+
+        try:
+            _ensure_sale_payments_table(conn)
+
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    venta_id,
+                    monto,
+                    forma_pago,
+                    fecha,
+                    usuario_id,
+                    nota
+                FROM venta_abonos
+                WHERE venta_id=?
+                ORDER BY fecha ASC, id ASC
+                """,
+                (sale_id,),
+            ).fetchall()
+
+            total = conn.execute(
+                """
+                SELECT
+                    total,
+                    total_abonado,
+                    saldo_pendiente,
+                    estado,
+                    estado_pago
+                FROM ventas
+                WHERE id=?
+                """,
+                (sale_id,),
+            ).fetchone()
+
+            if not total:
+                return jsonify({
+                    "ok": False,
+                    "error": "Venta no encontrada",
+                }), 404
+
+            return jsonify({
+                "ok": True,
+                "results": [dict(r) for r in rows],
+                "total": float(total["total"] or 0),
+                "total_abonado": float(
+                    total["total_abonado"] or 0
+                ),
+                "saldo_pendiente": float(
+                    total["saldo_pendiente"] or 0
+                ),
+                "estado": total["estado"],
+                "estado_pago": total["estado_pago"],
+            })
+
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 403
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc)[:500],
+        }), 400
+
+
 @legacy_compat_api.post("/ventas/<int:sale_id>/abonos")
 def registrar_abono(sale_id: int):
     try:
@@ -635,6 +756,8 @@ def registrar_abono(sale_id: int):
         conn = get_db()
 
         try:
+            _ensure_sale_payments_table(conn)
+
             sale = conn.execute(
                 "SELECT * FROM ventas WHERE id=? LIMIT 1",
                 (sale_id,),
@@ -665,10 +788,42 @@ def registrar_abono(sale_id: int):
                 return jsonify({
                     "ok": False,
                     "error": (
-                        f"El abono no puede superar el saldo "
+                        "El abono no puede superar el saldo "
                         f"pendiente de {saldo_anterior:.2f}"
                     ),
                 }), 400
+
+            max_id = conn.execute(
+                "SELECT COALESCE(MAX(id),0)+1 FROM venta_abonos"
+            ).fetchone()[0]
+
+            forma_pago = str(
+                data.get("forma_pago")
+                or sale["forma_pago"]
+                or "Contado"
+            ).strip()
+
+            nota = str(
+                data.get("nota")
+                or ""
+            ).strip()
+
+            conn.execute(
+                """
+                INSERT INTO venta_abonos
+                    (id, venta_id, monto, forma_pago,
+                     usuario_id, nota)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(max_id),
+                    sale_id,
+                    monto,
+                    forma_pago,
+                    int(a.id),
+                    nota,
+                ),
+            )
 
             nuevo_abonado = anterior + monto
             nuevo_saldo = max(
@@ -676,22 +831,12 @@ def registrar_abono(sale_id: int):
                 0,
             )
 
-            nuevo_estado_pago = (
-                "Pagado"
-                if nuevo_saldo <= 0
-                else "Abonado"
-            )
-
-            nuevo_estado = (
-                "Pagado"
-                if nuevo_saldo <= 0
-                else str(sale["estado"] or "Pendiente")
-            )
-
-            forma_pago = data.get(
-                "forma_pago",
-                sale["forma_pago"],
-            )
+            if nuevo_saldo <= 0:
+                nuevo_estado = "Pagado"
+                nuevo_estado_pago = "Pagado"
+            else:
+                nuevo_estado = "Pendiente"
+                nuevo_estado_pago = "Abonado"
 
             conn.execute(
                 """
@@ -740,7 +885,7 @@ def registrar_abono(sale_id: int):
                 "saldo_pendiente": nuevo_saldo,
                 "estado_pago": nuevo_estado_pago,
                 "estado": nuevo_estado,
-            })
+            }), 201
 
         finally:
             conn.close()
@@ -755,49 +900,6 @@ def registrar_abono(sale_id: int):
         return jsonify({
             "ok": False,
             "error": str(exc)[:500],
-        }), 400
-
-
-
-@legacy_compat_api.delete("/ventas/<int:sale_id>")
-def eliminar_venta(sale_id: int):
-    try:
-        a = current_actor()
-        require(a, "delete_sale")
-
-        conn = get_db()
-
-        try:
-            result = delete_sale(
-                conn,
-                sale_id=sale_id,
-                user_id=int(a.id),
-            )
-
-            conn.commit()
-
-            return jsonify({
-                "ok": True,
-                **result,
-            }), 200
-
-        except Exception:
-            conn.rollback()
-            raise
-
-        finally:
-            conn.close()
-
-    except (AuthenticationError, PermissionError) as exc:
-        return jsonify({
-            "ok": False,
-            "error": str(exc),
-        }), 403
-
-    except SaleDeleteError as exc:
-        return jsonify({
-            "ok": False,
-            "error": str(exc),
         }), 400
 
 

@@ -14,6 +14,7 @@ from .system_api import system_api
 from .legacy_compat_api import legacy_compat_api
 from .ai_api import ai_api
 from .admin_api import admin_api
+from .sales_management_api import sales_api
 
 
 def register_blueprints(app):
@@ -31,3 +32,4 @@ def register_blueprints(app):
     app.register_blueprint(legacy_compat_api)
     app.register_blueprint(ai_api)
     app.register_blueprint(admin_api)
+    app.register_blueprint(sales_api)

@@ -65,7 +65,7 @@ def build_invoice_message(
 
     lines.extend([
         "",
-        f"*TOTAL: ${total:,.0f}*",
+        f"*TOTAL: ${total:,.2f}*",
         "",
         "Gracias por tu compra. 💛",
     ])

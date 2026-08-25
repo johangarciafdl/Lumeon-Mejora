@@ -218,6 +218,483 @@ def crear_cliente():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+
+@legacy_compat_api.put("/productos/<int:product_id>")
+def actualizar_producto(product_id: int):
+    try:
+        actor("update_product")
+        data = request.get_json(silent=True) or {}
+
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM productos WHERE id=?",
+                (product_id,),
+            ).fetchone()
+
+            if not row:
+                return jsonify({
+                    "ok": False,
+                    "error": "Producto no encontrado",
+                }), 404
+
+            nombre = str(data.get("nombre", row["nombre"] or "")).strip()
+            referencia = str(data.get("referencia", row["referencia"] or "")).strip()
+            descripcion = str(data.get("descripcion", row["descripcion"] or "")).strip()
+            categoria = str(data.get("categoria", row["categoria"] or "General")).strip() or "General"
+
+            try:
+                precio_compra = float(data.get("precio_compra", row["precio_compra"] or 0))
+                precio_venta = float(data.get("precio_venta", row["precio_venta"] or 0))
+                stock = int(data.get("stock", row["stock"] or 0))
+                stock_minimo = int(data.get("stock_minimo", row["stock_minimo"] or 0))
+            except (TypeError, ValueError):
+                return jsonify({
+                    "ok": False,
+                    "error": "Stock y precios deben ser numéricos",
+                }), 400
+
+            if len(nombre) < 2:
+                return jsonify({
+                    "ok": False,
+                    "error": "El nombre del producto es obligatorio",
+                }), 400
+
+            if not referencia:
+                return jsonify({
+                    "ok": False,
+                    "error": "La referencia es obligatoria",
+                }), 400
+
+            if min(precio_compra, precio_venta, stock, stock_minimo) < 0:
+                return jsonify({
+                    "ok": False,
+                    "error": "Stock y precios no pueden ser negativos",
+                }), 400
+
+            duplicate = conn.execute(
+                "SELECT id FROM productos WHERE referencia=? AND id<>?",
+                (referencia, product_id),
+            ).fetchone()
+
+            if duplicate:
+                return jsonify({
+                    "ok": False,
+                    "error": "Referencia ya existe",
+                }), 400
+
+            conn.execute(
+                """
+                UPDATE productos
+                SET nombre=?,
+                    referencia=?,
+                    descripcion=?,
+                    categoria=?,
+                    precio_compra=?,
+                    precio_venta=?,
+                    stock=?,
+                    stock_minimo=?
+                WHERE id=?
+                """,
+                (
+                    nombre,
+                    referencia,
+                    descripcion,
+                    categoria,
+                    precio_compra,
+                    precio_venta,
+                    stock,
+                    stock_minimo,
+                    product_id,
+                ),
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": product_id,
+            })
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+@legacy_compat_api.delete("/productos/<int:product_id>")
+def eliminar_producto(product_id: int):
+    try:
+        actor("delete_product")
+
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT id, nombre FROM productos WHERE id=?",
+                (product_id,),
+            ).fetchone()
+
+            if not row:
+                return jsonify({
+                    "ok": False,
+                    "error": "Producto no encontrado",
+                }), 404
+
+            refs = conn.execute(
+                "SELECT COUNT(*) FROM venta_items WHERE producto_id=?",
+                (product_id,),
+            ).fetchone()[0]
+
+            if refs:
+                return jsonify({
+                    "ok": False,
+                    "error": "No se puede eliminar un producto que tiene ventas asociadas",
+                }), 409
+
+            conn.execute(
+                "DELETE FROM productos WHERE id=?",
+                (product_id,),
+            )
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": product_id,
+            })
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+@legacy_compat_api.put("/clientes/<int:customer_id>")
+def actualizar_cliente(customer_id: int):
+    try:
+        actor("update_customer")
+
+        data = request.get_json(silent=True) or {}
+
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM clientes WHERE id=?",
+                (customer_id,),
+            ).fetchone()
+
+            if not row:
+                return jsonify({
+                    "ok": False,
+                    "error": "Cliente no encontrado",
+                }), 404
+
+            nombre = " ".join(
+                str(data.get("nombre", row["nombre"] or "")).strip().split()
+            )
+            documento = str(
+                data.get("documento", row["documento"] or "")
+            ).strip()
+            telefono = str(
+                data.get("telefono", row["telefono"] or "")
+            ).strip()
+            direccion = str(
+                data.get("direccion", row["direccion"] or "")
+            ).strip()
+            email = str(
+                data.get("email", row["email"] or "")
+            ).strip().lower()
+            ciudad = str(
+                data.get("ciudad", row["ciudad"] or "")
+            ).strip()
+
+            if len(nombre) < 2:
+                return jsonify({
+                    "ok": False,
+                    "error": "El nombre del cliente no es válido",
+                }), 400
+
+            duplicate = None
+            if documento:
+                duplicate = conn.execute(
+                    "SELECT id FROM clientes WHERE documento=? AND id<>?",
+                    (documento, customer_id),
+                ).fetchone()
+
+            if duplicate:
+                return jsonify({
+                    "ok": False,
+                    "error": "Ya existe otro cliente con ese documento",
+                }), 400
+
+            conn.execute(
+                """
+                UPDATE clientes
+                SET nombre=?,
+                    documento=?,
+                    telefono=?,
+                    direccion=?,
+                    email=?,
+                    ciudad=?
+                WHERE id=?
+                """,
+                (
+                    nombre,
+                    documento or None,
+                    telefono,
+                    direccion,
+                    email or None,
+                    ciudad,
+                    customer_id,
+                ),
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": customer_id,
+            })
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+@legacy_compat_api.delete("/clientes/<int:customer_id>")
+def eliminar_cliente(customer_id: int):
+    try:
+        actor("delete_customer")
+
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT id, nombre FROM clientes WHERE id=?",
+                (customer_id,),
+            ).fetchone()
+
+            if not row:
+                return jsonify({
+                    "ok": False,
+                    "error": "Cliente no encontrado",
+                }), 404
+
+            sales = conn.execute(
+                "SELECT COUNT(*) FROM ventas WHERE cliente_id=?",
+                (customer_id,),
+            ).fetchone()[0]
+
+            if sales:
+                return jsonify({
+                    "ok": False,
+                    "error": "No se puede eliminar un cliente que tiene ventas asociadas",
+                }), 409
+
+            conn.execute(
+                "DELETE FROM clientes WHERE id=?",
+                (customer_id,),
+            )
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": customer_id,
+            })
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+
+@legacy_compat_api.get("/devoluciones")
+def listar_devoluciones():
+    try:
+        actor("read_sale")
+
+        conn = get_db()
+        try:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    venta_id,
+                    numero_factura,
+                    cliente_nombre,
+                    referencia,
+                    nombre,
+                    cantidad,
+                    motivo,
+                    fecha,
+                    estado
+                FROM legacy_devoluciones
+                ORDER BY id DESC
+                LIMIT 100
+                """
+            ).fetchall()
+
+            return jsonify([dict(row) for row in rows])
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
+@legacy_compat_api.post("/devoluciones")
+def crear_devolucion_legacy():
+    try:
+        actor_id = actor("refund_sale")
+
+        data = request.get_json(silent=True) or {}
+
+        numero_factura = str(data.get("numero_factura") or "").strip()
+        referencia = str(data.get("referencia") or "").strip()
+        cliente_nombre = str(data.get("cliente_nombre") or "").strip()
+        nombre = str(data.get("nombre") or "").strip()
+        motivo = str(data.get("motivo") or "").strip()
+        estado = str(data.get("estado") or "Procesada").strip() or "Procesada"
+
+        try:
+            cantidad = int(data.get("cantidad") or 1)
+        except (TypeError, ValueError):
+            return jsonify({
+                "ok": False,
+                "error": "La cantidad no es válida",
+            }), 400
+
+        if cantidad <= 0:
+            return jsonify({
+                "ok": False,
+                "error": "La cantidad debe ser mayor que cero",
+            }), 400
+
+        if not numero_factura:
+            return jsonify({
+                "ok": False,
+                "error": "La factura es obligatoria",
+            }), 400
+
+        if not referencia:
+            return jsonify({
+                "ok": False,
+                "error": "La referencia del producto es obligatoria",
+            }), 400
+
+        conn = get_db()
+
+        try:
+            venta = conn.execute(
+                """
+                SELECT id, numero_factura, cliente_nombre
+                FROM ventas
+                WHERE numero_factura=?
+                """,
+                (numero_factura,),
+            ).fetchone()
+
+            if not venta:
+                return jsonify({
+                    "ok": False,
+                    "error": "Venta no encontrada",
+                }), 404
+
+            producto = conn.execute(
+                """
+                SELECT id, nombre, referencia
+                FROM productos
+                WHERE referencia=?
+                """,
+                (referencia,),
+            ).fetchone()
+
+            if not producto:
+                return jsonify({
+                    "ok": False,
+                    "error": "Producto no encontrado",
+                }), 404
+
+            item = conn.execute(
+                """
+                SELECT id, cantidad
+                FROM venta_items
+                WHERE venta_id=? AND referencia=?
+                ORDER BY id
+                LIMIT 1
+                """,
+                (venta["id"], referencia),
+            ).fetchone()
+
+            if not item:
+                return jsonify({
+                    "ok": False,
+                    "error": "El producto no pertenece a la venta",
+                }), 400
+
+            if cantidad > int(item["cantidad"]):
+                return jsonify({
+                    "ok": False,
+                    "error": "La cantidad devuelta supera la cantidad vendida",
+                }), 400
+
+            conn.execute(
+                """
+                INSERT INTO legacy_devoluciones
+                (
+                    venta_id,
+                    numero_factura,
+                    cliente_nombre,
+                    referencia,
+                    nombre,
+                    cantidad,
+                    motivo,
+                    fecha,
+                    estado
+                )
+                VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                """,
+                (
+                    int(venta["id"]),
+                    numero_factura,
+                    cliente_nombre or venta["cliente_nombre"] or "",
+                    referencia,
+                    nombre or producto["nombre"],
+                    cantidad,
+                    motivo,
+                    estado,
+                ),
+            )
+
+            conn.execute(
+                """
+                UPDATE productos
+                SET stock = stock + ?
+                WHERE id=?
+                """,
+                (cantidad, int(producto["id"])),
+            )
+
+            conn.commit()
+
+            return jsonify({
+                "ok": True,
+                "id": int(conn.execute("SELECT last_insert_rowid()").fetchone()[0]),
+                "venta_id": int(venta["id"]),
+                "referencia": referencia,
+                "cantidad": cantidad,
+            }), 200
+
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    except (AuthenticationError, PermissionError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 403
+
+
 @legacy_compat_api.get("/ventas")
 def ventas():
     try:
@@ -1028,50 +1505,6 @@ def ciclo_resumen(ciclo: str):
                 "compradores": compradores,
                 "ventas": sales_dict,
             })
-        finally:
-            conn.close()
-    except (AuthenticationError, PermissionError) as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 403
-
-
-@legacy_compat_api.get("/devoluciones")
-def devoluciones():
-    try:
-        actor("read_sale")
-        conn = get_db()
-        try:
-            rows = conn.execute("""
-                SELECT vd.id,
-                       vd.venta_id,
-                       v.numero_factura,
-                       v.cliente_nombre,
-                       vd.motivo,
-                       vd.created_at AS fecha,
-                       vd.motivo AS estado
-                FROM venta_devoluciones vd
-                JOIN ventas v ON v.id = vd.venta_id
-                ORDER BY vd.id DESC
-            """).fetchall()
-            result = []
-            for row in rows:
-                base = dict(row)
-                items = conn.execute("""
-                    SELECT referencia, cantidad
-                    FROM venta_devolucion_items
-                    WHERE devolucion_id=?
-                    ORDER BY id
-                """, (row["id"],)).fetchall()
-                if items:
-                    for item in items:
-                        result.append({
-                            **base,
-                            "referencia": item["referencia"],
-                            "nombre": item["referencia"],
-                            "cantidad": item["cantidad"],
-                        })
-                else:
-                    result.append(base)
-            return jsonify(result)
         finally:
             conn.close()
     except (AuthenticationError, PermissionError) as exc:

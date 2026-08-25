@@ -155,6 +155,7 @@
     }catch(e){notify(e.message,'error');}
   }
   window.addSaleItem=addItem;
+  window.addVentaItem=addItem;
 
   function modalOpen(){ $('#modal-venta')?.classList.add('open'); }
   function modalClose(){ $('#modal-venta')?.classList.remove('open'); editId=null; items=[]; window.editVentaId=null; window.ventaItems=[]; }
@@ -241,17 +242,9 @@
 
   function bindTopbar(){const b=$('#topbar-action');if(!b)return;b.type='button';b.onclick=(e)=>{e.preventDefault();e.stopPropagation();if(window.currentPage==='ventas')openNew();else if(window.currentPage==='inventario')window.openModalProducto?.();else if(window.currentPage==='clientes')window.openModalCliente?.();else if(window.currentPage==='devoluciones')window.openModalDevolucion?.();};}
 
-  function bindNavigation(){
-    const original=window.goto;
-    window.goto=(page)=>{
-      if(typeof original==='function') original(page);
-      if(page==='ventas') setTimeout(()=>{resetFilter();bindFilters();bindModal();bindTopbar();removePageNewSaleButtons();loadVentas();},10);
-    };
-  }
-
   function start(){
     if(booted) return; booted=true;
-    removePageNewSaleButtons(); bindFilters(); bindModal(); bindTopbar(); bindNavigation();
+    removePageNewSaleButtons(); bindFilters(); bindModal(); bindTopbar();
     if($('#page-ventas')?.classList.contains('active')){resetFilter();loadVentas();}
   }
 

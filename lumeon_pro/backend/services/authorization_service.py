@@ -29,6 +29,8 @@ WRITE_ACTIONS = {
     "send_invoice",
     "update_inventory",
     "update_sale",
+    "update_product",
+    "update_customer",
     "record_payment",
 }
 ADMIN_ACTIONS = {"delete_customer", "delete_product", "delete_sale", "refund_sale", "manage_users", "view_audit_log"}

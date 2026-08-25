@@ -62,7 +62,6 @@ def security_headers(response):
 def index():
     path = Path(app.static_folder) / "index.html"
     html = path.read_text(encoding="utf-8")
-
     if 'href="/assistant.css' not in html:
         html = html.replace(
             "</head>",
@@ -70,11 +69,13 @@ def index():
             1,
         )
 
-    # Frontend boot contract: assistant is isolated; the application runtime
-    # loads Ventas, navigation, and the dedicated mobile menu controller.
+    # Frontend boot contract: keep the isolated assistant and mobile controller,
+    # then load the stable V8 sales runtime and navigation core.
     scripts = [
         '<script src="/assistant.js?v=20260824-2" defer></script>',
-        '<script src="/sales_ui_runtime_fix_v2.js?v=20260824-4" defer></script>',
+        '<script src="/sales_ui_auth_sync.js" defer></script>',
+        '<script src="/sales_ui_runtime_fix_v8.js?v=20260824-4" defer></script>',
+        '<script src="/navigation_core.js?v=20260824-3" defer></script>',
         '<script src="/mobile_menu_core.js?v=20260824-1" defer></script>',
     ]
 
@@ -82,7 +83,6 @@ def index():
         src = script.split('src="', 1)[1].split('"', 1)[0].split('?', 1)[0]
         if f'src="{src}' not in html:
             html = html.replace("</body>", script + "</body>", 1)
-
     return html
 
 

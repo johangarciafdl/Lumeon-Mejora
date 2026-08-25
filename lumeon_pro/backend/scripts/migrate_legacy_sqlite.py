@@ -287,7 +287,7 @@ def migrate_sale_items(old: sqlite3.Connection, new: sqlite3.Connection, product
 def migrate_legacy_tables(old: sqlite3.Connection, new: sqlite3.Connection, sale_map: dict[int, int], user_map: dict[int, int]) -> None:
     ensure_legacy_tables(new)
 
-    for row in old.execute("SELECT * FROM pedidos ORDER BY id"):
+    for row in old.execute("SELECT * FROM legacy_pedidos ORDER BY id"):
         new.execute(
             """INSERT OR REPLACE INTO legacy_pedidos
             (id,numero_pedido,proveedor,venta_id,fecha_pedido,fecha_entrega,fecha_cancelacion,total,estado,notas,ciclo,creado_en,cliente_nombre)
@@ -299,7 +299,7 @@ def migrate_legacy_tables(old: sqlite3.Connection, new: sqlite3.Connection, sale
             ),
         )
 
-    for row in old.execute("SELECT * FROM pedido_items ORDER BY id"):
+    for row in old.execute("SELECT * FROM legacy_pedido_items ORDER BY id"):
         new.execute(
             """INSERT OR REPLACE INTO legacy_pedido_items
             (id,pedido_id,referencia,nombre,cantidad,precio_compra,subtotal)
@@ -307,7 +307,7 @@ def migrate_legacy_tables(old: sqlite3.Connection, new: sqlite3.Connection, sale
             (row["id"], row["pedido_id"], row["referencia"], row["nombre"], row["cantidad"], row["precio_compra"], row["subtotal"]),
         )
 
-    for row in old.execute("SELECT * FROM abonos ORDER BY id"):
+    for row in old.execute("SELECT * FROM legacy_abonos ORDER BY id"):
         new.execute(
             """INSERT OR REPLACE INTO legacy_abonos
             (id,venta_id,monto,fecha,metodo,notas,usuario_id)
@@ -315,7 +315,7 @@ def migrate_legacy_tables(old: sqlite3.Connection, new: sqlite3.Connection, sale
             (row["id"], sale_map[row["venta_id"]], row["monto"], row["fecha"], row["metodo"], row["notas"], user_map.get(row["usuario_id"]) if row["usuario_id"] else None),
         )
 
-    for row in old.execute("SELECT * FROM devoluciones ORDER BY id"):
+    for row in old.execute("SELECT * FROM legacy_devoluciones ORDER BY id"):
         new.execute(
             """INSERT OR REPLACE INTO legacy_devoluciones
             (id,venta_id,numero_factura,cliente_nombre,referencia,nombre,cantidad,motivo,fecha,estado)
@@ -347,7 +347,7 @@ def migrate(source: Path, target: Path, apply: bool) -> None:
             print("venta_items:", count(old, "venta_items"))
             print("placeholders_documento:", old.execute("SELECT COUNT(*) FROM clientes WHERE TRIM(COALESCE(documento,'')) IN ('0','00','000','0000','00000','000000','0000000')").fetchone()[0])
             print("ventas_cliente_huerfano:", old.execute("SELECT COUNT(*) FROM ventas v LEFT JOIN clientes c ON c.id=v.cliente_id WHERE v.cliente_id IS NOT NULL AND c.id IS NULL").fetchone()[0])
-            print("pedidos_venta_huerfana:", old.execute("SELECT COUNT(*) FROM pedidos p LEFT JOIN ventas v ON v.id=p.venta_id WHERE p.venta_id IS NOT NULL AND v.id IS NULL").fetchone()[0])
+            print("pedidos_venta_huerfana:", old.execute("SELECT COUNT(*) FROM legacy_pedidos p LEFT JOIN ventas v ON v.id=p.venta_id WHERE p.venta_id IS NOT NULL AND v.id IS NULL").fetchone()[0])
             return
 
         ensure_sale_history_columns(new)

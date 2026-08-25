@@ -75,7 +75,7 @@ def index():
         '<script src="/assistant.js?v=20260824-2" defer></script>',
         '<script src="/sales_ui_auth_sync.js" defer></script>',
         '<script src="/sales_ui_runtime_fix_v8.js?v=20260824-4" defer></script>',
-        '<script src="/navigation_core.js?v=20260824-3" defer></script>',
+        '<script src="/navigation_core.js?v=20260825-1" defer></script>',
         '<script src="/mobile_menu_core.js?v=20260824-1" defer></script>',
     ]
 

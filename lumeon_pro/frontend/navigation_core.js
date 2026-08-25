@@ -188,11 +188,19 @@
     setActiveNav(page);
     setTopbar(page);
 
+    // Cargar los datos de la página activa también en el arranque.
+    // Esto evita que la interfaz aparezca vacía después de una recarga.
+    loadPageData(page);
+
     setTimeout(() => {
       expose();
       bindNavItems();
       bindAdminLogs();
-      setActiveNav(window.currentPage || page);
+
+      const activePage = window.currentPage || page;
+      setActiveNav(activePage);
+      setTopbar(activePage);
+      loadPageData(activePage);
     }, 1000);
   }
 

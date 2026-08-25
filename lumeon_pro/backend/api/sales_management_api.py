@@ -389,12 +389,27 @@ def update_status(sale_id: int):
             sale = conn.execute("SELECT * FROM ventas WHERE id=? LIMIT 1", (sale_id,)).fetchone()
             if not sale:
                 return jsonify({"ok": False, "error": "Venta no encontrada"}), 404
-            state, pstate, paid, balance = _payment_state(sale["total"], sale["total_abonado"], requested)
-            if requested == "Pagado" and float(sale["total"] or 0) > float(sale["total_abonado"] or 0):
-                remaining = balance
+            total = float(sale["total"] or 0)
+            paid_before = float(sale["total_abonado"] or 0)
+            remaining_before = max(total - paid_before, 0)
+
+            state, pstate, paid, balance = _payment_state(
+                total,
+                paid_before,
+                requested,
+            )
+
+            if requested == "Pagado" and remaining_before > 0:
                 conn.execute(
                     "INSERT INTO venta_abonos (venta_id, monto, forma_pago, fecha, usuario_id, nota) VALUES (?, ?, ?, ?, ?, ?)",
-                    (sale_id, remaining, sale["forma_pago"] or "Contado", datetime.now(timezone.utc), int(actor.id), "Pago total"),
+                    (
+                        sale_id,
+                        remaining_before,
+                        sale["forma_pago"] or "Contado",
+                        datetime.now(timezone.utc),
+                        int(actor.id),
+                        "Pago total",
+                    ),
                 )
             conn.execute(
                 "UPDATE ventas SET estado=?, estado_pago=?, total_abonado=?, saldo_pendiente=? WHERE id=?",

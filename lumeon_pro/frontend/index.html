@@ -928,7 +928,7 @@ textarea{resize:vertical;min-height:80px}
 </div>
 <script>
 const API = window.location.origin + '/api';
-let currentPage='dashboard', ventaItems=[], editProductoId=null, editClienteId=null, editVentaId=null, ventasEstadoFiltro='', currentUser=null, ventasCache=[];
+var currentPage='dashboard', ventaItems=[], editProductoId=null, editClienteId=null, editVentaId=null, ventasEstadoFiltro='', currentUser=null, ventasCache=[];
 
 function fmt(n){return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0)}
 function fmtDate(s){if(!s)return '—';return s.split('T')[0].split('-').reverse().join('/')}
@@ -1130,8 +1130,6 @@ async function delProducto(id,nombre){
 
 // VENTAS — IMPLEMENTACION UNICA
 
-let ventasEstadoFiltro = "";
-let editVentaId = null;
 
 function paymentStatus(v){
   const payment = String(v.estado_pago || "").trim();

@@ -5,7 +5,7 @@ class ProductError(ValueError):
     pass
 
 
-def search_products(conn, term: str, limit: int = 20) -> list[dict]:
+def search_products(conn, term: str, limit: int = 100) -> list[dict]:
     term = str(term or "").strip()
     limit = max(1, min(int(limit), 100))
     columns = "id,nombre,referencia,descripcion,categoria,precio_compra,precio_venta,stock,stock_minimo,creado_en"

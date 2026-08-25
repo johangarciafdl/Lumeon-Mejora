@@ -29,7 +29,6 @@
   };
 
   function closeMobileMenu() {
-    window.closeMobileMenu?.();
     document.getElementById('sidebar')?.classList.remove('mobile-open');
     document.getElementById('mobile-menu-backdrop')?.classList.remove('open');
     document.body.classList.remove('mobile-menu-open');
